@@ -1,0 +1,19 @@
+/* App-specific styles */
+.app-header {
+  border-bottom: 2px solid #3498db;
+}
+
+.language-switcher {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.language-switcher label {
+  font-weight: bold;
+}
+
+.language-switcher select {
+  padding: 0.3rem 0.5rem;
+}

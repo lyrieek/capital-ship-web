@@ -1,0 +1,32 @@
+{
+  "title": "主力舰",
+  "map": "地图查看器",
+  "legend": "地形图例",
+  "entities": "舰艇 & 建筑",
+  "language": "语言",
+  "english": "英语",
+  "chinese": "中文",
+  "terrain": {
+    "water": "深水区",
+    "shallow_water": "浅水区",
+    "deep_water": "深水区",
+    "forest": "森林",
+    "plantsrocks": "植物与岩石"
+  },
+  "entity_types": {
+    "ship": "舰艇",
+    "building": "建筑"
+  },
+  "ship_stats": {
+    "name": "名称",
+    "type": "类型",
+    "hp": "生命值",
+    "attack": "攻击力",
+    "range": "射程"
+  },
+  "building_stats": {
+    "sprites": "精灵数量",
+    "type": "类型",
+    "radius": "碰撞半径"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "title": "Capital Ship",
+  "map": "Map Viewer",
+  "legend": "Terrain Legend",
+  "entities": "Ships & Buildings",
+  "language": "Language",
+  "english": "English",
+  "chinese": "Chinese",
+  "terrain": {
+    "water": "Deep Water",
+    "shallow_water": "Shallow Water",
+    "deep_water": "Deep Water",
+    "forest": "Forest",
+    "plantsrocks": "Plants & Rocks"
+  },
+  "entity_types": {
+    "ship": "Ship",
+    "building": "Building"
+  },
+  "ship_stats": {
+    "name": "Name",
+    "type": "Type",
+    "hp": "HP",
+    "attack": "Attack",
+    "range": "Range"
+  },
+  "building_stats": {
+    "sprites": "Sprite Count",
+    "type": "Type",
+    "radius": "Bounding Radius"
+  }
+}
