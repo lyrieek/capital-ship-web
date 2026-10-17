@@ -1,4 +1,4 @@
-# 首都舰艇模拟战
+# 舰艇模拟战
 
 一个基于Vite + React + TypeScript的2D海军战斗模拟游戏，使用Canvas 2D API进行渲染。
 

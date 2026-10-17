@@ -12,7 +12,6 @@
         "format": "oxfmt src --write"
     },
     "dependencies": {
-        "@babylonjs/core": "^9.31.0",
         "i18next": "^26.4.7",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
