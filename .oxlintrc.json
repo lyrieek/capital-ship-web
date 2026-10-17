@@ -1,0 +1,70 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": [
+        "typescript",
+        "unicorn",
+        "oxc"
+    ],
+    "categories": {
+        "correctness": "error",
+        "suspicious": "error",
+        "pedantic": "error",
+        "perf": "error",
+        "style": "error",
+        "restriction": "error",
+        "nursery": "off"
+    },
+    "rules": {
+        "no-explicit-any": "warn",
+        "no-magic-numbers": "off",
+        "id-length": "off",
+        "curly": "off",
+        "no-ternary": "off",
+        "no-nested-ternary": "off",
+        "no-array-for-each": "off",
+        "no-non-null-assertion": "off",
+        "no-plusplus": "off",
+        "no-continue": "off",
+        "explicit-function-return-type": "off",
+        "explicit-module-boundary-types": "off",
+        "func-style": "off",
+        "one-var": "off",
+        "sort-imports": "off",
+        "method-signature-style": "off",
+        "sort-keys": "off",
+        "explicit-member-accessibility": "off",
+        "no-zero-fractions": "off",
+        "prefer-destructuring": "off",
+        "complexity": [
+            "warn",
+            30
+        ],
+        "max-params": [
+            "warn",
+            10
+        ],
+        "max-statements": [
+            "warn",
+            80
+        ],
+        "max-lines-per-function": [
+            "warn",
+            120
+        ],
+        "unicorn/no-null": "off",
+        "unicorn/no-nested-ternary": "off",
+        "unicorn/filename-case": [
+            "error",
+            {
+                "cases": {
+                    "pascalCase": true,
+                    "kebabCase": true
+                }
+            }
+        ],
+        "unicorn/prefer-query-selector": "off",
+    },
+    "env": {
+        "builtin": true
+    }
+}

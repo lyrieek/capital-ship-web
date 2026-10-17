@@ -1,10 +1,9 @@
-// 2D Naval Battle Canvas component
-import { useRef, useEffect } from 'react';
-import { initializeGame, resetGame } from '../game/Game';
-import { setContext } from '../game/draw';
-import { getGameInstance } from '../game/Game';
-import { H, W } from '../game/utils';
+import { useRef, useEffect } from "react";
+import { initializeGame, resetGame, getGameInstance } from "../game/Game";
+import { setContext } from "../game/draw";
+import { H, W } from "../game/utils";
 
+// 2D Naval Battle Canvas component
 export default function BattleCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -13,7 +12,7 @@ export default function BattleCanvas() {
     if (!canvas) return;
 
     initializeGame();
-    setContext(canvas.getContext('2d')!);
+    setContext(canvas.getContext("2d")!);
 
     let last = performance.now();
 
@@ -38,20 +37,13 @@ export default function BattleCanvas() {
         resetGame();
       }
     };
-    canvas.addEventListener('click', handleClick);
+    canvas.addEventListener("click", handleClick);
 
     return () => {
       cancelAnimationFrame(animationFrameId);
-      canvas.removeEventListener('click', handleClick);
+      canvas.removeEventListener("click", handleClick);
     };
   }, []);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      id="c"
-      width={W}
-      height={H}
-    />
-  );
+  return <canvas ref={canvasRef} id="c" width={W} height={H} />;
 }

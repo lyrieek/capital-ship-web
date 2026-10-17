@@ -1,23 +1,27 @@
 // Game state singleton
-import type { GameState, Ship } from './types';
-import { ShipImpl } from './Ship';
-import { drawWater, drawShip, drawProjectile, drawParticle, drawHUD } from './draw';
-import { H, W } from './utils';
+import type { GameState, ParticleItem } from "./types";
+import { ShipImpl } from "./Ship";
+import type { Ship } from "./ship.d";
+import { drawWater, drawShip, drawProjectile, drawParticle, drawHUD } from "./draw";
+import { H, W } from "./utils";
 
 const TAU = Math.PI * 2;
 
-function createParticles(x: number, y: number, n: number, color: string, particles: any[]) {
+// 创建爆炸粒子的辅助函数
+function createParticles(x: number, y: number, n: number, color: string, particles: ParticleItem[]) {
   for (let i = 0; i < n; i++) {
     const a = Math.random() * TAU;
     const sp = Math.random() * 190 + 30;
     const life = Math.random() * 0.55 + 0.25;
     particles.push({
-      x, y,
+      x,
+      y,
       vx: Math.cos(a) * sp,
       vy: Math.sin(a) * sp,
-      life, maxLife: life,
+      life,
+      maxLife: life,
       size: Math.random() * 3 + 1.5,
-      color
+      color,
     });
   }
 }
@@ -30,8 +34,12 @@ export function getGameInstance(): GameState | null {
   return gameInstance;
 }
 
+const mkShip = (team: "red" | "blue", name: string, x: number, y: number, dir: 1 | -1, minX: number, maxX: number, light: string, dark: string) =>
+  new ShipImpl({ team, name, x, y, baseY: y, dir, minX, maxX, light, dark });
+
+// oxlint-disable-next-line max-lines-per-function
 export function initializeGame(): GameState {
-  const particles: any[] = [];
+  const particles: ParticleItem[] = [];
 
   const game: GameState = {
     ships: [],
@@ -48,14 +56,11 @@ export function initializeGame(): GameState {
       this.over = false;
       this.winnerTeam = null;
 
-      const mk = (team: string, name: string, x: number, y: number, dir: 1 | -1, minX: number, maxX: number, light: string, dark: string) =>
-        new ShipImpl({ team, name, x, y, baseY: y, dir, minX, maxX, light, dark });
-
       this.ships = [
-        mk('red', '红-1', 200, 120,  1,  70, 400, '#ff7b6b', '#b8322a'),
-        mk('red', '红-2', 280, 240, -1,  70, 400, '#ff9f8a', '#c43a30'),
-        mk('blue','蓝-1', 700, 360, -1, W - 330, W, '#7cc4ff', '#1d5c9e'),
-        mk('blue','蓝-2', 620, 480,  1, W - 330, W, '#a5d8ff', '#2a6ba8'),
+        mkShip("red", "红-1", 200, 120, 1, 70, 400, "#ff7b6b", "#b8322a"),
+        mkShip("red", "红-2", 280, 240, -1, 70, 400, "#ff9f8a", "#c43a30"),
+        mkShip("blue", "蓝-1", 700, 360, -1, W - 330, W, "#7cc4ff", "#1d5c9e"),
+        mkShip("blue", "蓝-2", 620, 480, 1, W - 330, W, "#a5d8ff", "#2a6ba8"),
       ];
     },
 
@@ -74,14 +79,19 @@ export function initializeGame(): GameState {
       const my = ship.y + Math.sin(ang) * 46;
 
       this.projectiles.push({
-        type: 'shell', owner: ship,
-        x: mx, y: my,
-        vx: Math.cos(ang) * S, vy: Math.sin(ang) * S,
-        r: 26, dmg: 10,
-        life: 5, trail: []
+        type: "shell",
+        owner: ship,
+        x: mx,
+        y: my,
+        vx: Math.cos(ang) * S,
+        vy: Math.sin(ang) * S,
+        r: 26,
+        dmg: 10,
+        life: 5,
+        trail: [],
       });
 
-      createParticles(mx, my, 6, '#ffd166', this.particles);
+      createParticles(mx, my, 6, "#ffd166", this.particles);
     },
 
     fireTorpedo(ship: Ship, target: Ship) {
@@ -99,11 +109,16 @@ export function initializeGame(): GameState {
       const my = ship.y + Math.sin(ang) * 46;
 
       this.projectiles.push({
-        type: 'torp', owner: ship,
-        x: mx, y: my,
-        vx: Math.cos(ang) * S, vy: Math.sin(ang) * S,
-        r: 34, dmg: 30,
-        life: 9, trail: []
+        type: "torp",
+        owner: ship,
+        x: mx,
+        y: my,
+        vx: Math.cos(ang) * S,
+        vy: Math.sin(ang) * S,
+        r: 34,
+        dmg: 30,
+        life: 9,
+        trail: [],
       });
     },
 
@@ -112,17 +127,22 @@ export function initializeGame(): GameState {
     },
 
     resolveCollisions() {
-      const alive = this.ships.filter(s => s.hp > 0);
+      const alive = this.ships.filter((s) => s.hp > 0);
       for (let i = 0; i < alive.length; i++) {
         for (let j = i + 1; j < alive.length; j++) {
-          const a = alive[i], b = alive[j];
-          const dx = b.x - a.x, dy = b.y - a.y;
+          const a = alive[i],
+            b = alive[j];
+          const dx = b.x - a.x,
+            dy = b.y - a.y;
           const d = Math.hypot(dx, dy);
           if (d < 80 && d > 0.001) {
             const push = (80 - d) * 0.5;
-            const nx = dx / d, ny = dy / d;
-            a.x -= nx * push;  a.y -= ny * push;
-            b.x += nx * push;  b.y += ny * push;
+            const nx = dx / d,
+              ny = dy / d;
+            a.x -= nx * push;
+            a.y -= ny * push;
+            b.x += nx * push;
+            b.y += ny * push;
           }
         }
       }
@@ -157,23 +177,23 @@ export function initializeGame(): GameState {
           if ((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1) {
             p.dead = true;
             s.takeDamage(p.dmg);
-            createParticles(p.x, p.y, p.type === 'torp' ? 30 : 12, p.type === 'torp' ? '#ff9f43' : '#ffd166', this.particles);
+            createParticles(p.x, p.y, p.type === "torp" ? 30 : 12, p.type === "torp" ? "#ff9f43" : "#ffd166", this.particles);
             break;
           }
         }
       }
-      this.projectiles = this.projectiles.filter(p => !p.dead);
+      this.projectiles = this.projectiles.filter((p) => !p.dead);
     },
 
     updateParticles(dt: number) {
       for (const p of this.particles) {
         p.x += p.vx * dt;
         p.y += p.vy * dt;
-        p.vx *= (1 - 2.5 * dt);
-        p.vy *= (1 - 2.5 * dt);
+        p.vx *= 1 - 2.5 * dt;
+        p.vy *= 1 - 2.5 * dt;
         p.life -= dt;
       }
-      this.particles = this.particles.filter(p => p.life > 0);
+      this.particles = this.particles.filter((p) => p.life > 0);
     },
 
     update(dt: number) {
@@ -187,9 +207,7 @@ export function initializeGame(): GameState {
       this.updateParticles(dt);
 
       if (!this.over) {
-        const teams = new Set(
-          this.ships.filter(s => s.hp > 0).map(s => s.team)
-        );
+        const teams = new Set(this.ships.filter((s) => s.hp > 0).map((s) => s.team));
         if (teams.size <= 1) {
           this.over = true;
           this.winnerTeam = teams.size === 1 ? [...teams][0] : null;
