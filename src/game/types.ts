@@ -5,6 +5,11 @@ export interface Vector2 {
   x: number;
   y: number;
 }
+
+/**
+ * 移动点类型接口
+ * 包含位置和速度信息
+ */
 export interface MovingPoint {
   x: number;
   y: number;
@@ -14,6 +19,9 @@ export interface MovingPoint {
   vy: number;
 }
 
+/**
+ * 武器弹药类型接口
+ */
 export interface Projectile extends MovingPoint {
   // 弹药类型：shell-炮弹，torp-鱼雷
   type: "shell" | "torp";
@@ -31,6 +39,9 @@ export interface Projectile extends MovingPoint {
   dead?: boolean;
 }
 
+/**
+ * 粒子效果类型接口
+ */
 export interface ParticleItem extends MovingPoint {
   // 剩余生命时间
   life: number;

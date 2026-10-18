@@ -1,6 +1,6 @@
 # 舰艇模拟战
 
-一个基于Vite + React + TypeScript的2D海军战斗模拟游戏，使用Canvas 2D API进行渲染。
+一个基于Vite + React + TypeScript的2D海军战斗模拟游戏，使用Babylon.js 进行渲染。
 
 ## 项目概述
 
@@ -17,7 +17,7 @@
 ## 技术栈
 
 - 框架：Vite + React + Babylon.js
-- 渲染：HTML5 Canvas 2D API
+- 渲染：Babylon.js（正交俯视，舰船等使用 DynamicTexture）
 - 国际化：i18next（中英双语）
 - 构建：Vite
 - 包管理：PNPM

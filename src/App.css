@@ -3,6 +3,15 @@
   border-bottom: 2px solid #3498db;
 }
 
+/* 战场画布：随容器宽度缩放，保持 16:9（与 1600x900 的世界坐标一致） */
+.map-section canvas {
+  display: block;
+  width: 100%;
+  max-width: 1600px;
+  aspect-ratio: 16 / 9;
+  touch-action: none;
+}
+
 .language-switcher {
   margin-left: auto;
   display: flex;

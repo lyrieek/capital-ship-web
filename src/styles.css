@@ -38,8 +38,10 @@ body {
 
 .map-section {
   flex: 2;
-  display: grid;
-  place-content: center;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
 }
 
 .sidebar {

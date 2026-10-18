@@ -1,8 +1,8 @@
 // Game state singleton
 import type { GameState, ParticleItem } from "./types";
-import { ShipImpl } from "./Ship";
+import { ShipImpl } from "./ship";
 import type { Ship } from "./ship.d";
-import { drawWater, drawShip, drawProjectile, drawParticle, drawHUD } from "./draw";
+import { renderGame } from "./render";
 import { H, W } from "./utils";
 
 const TAU = Math.PI * 2;
@@ -216,11 +216,7 @@ export function initializeGame(): GameState {
     },
 
     draw() {
-      drawWater(this.time);
-      for (const s of this.ships) drawShip(s);
-      for (const p of this.projectiles) drawProjectile(p);
-      for (const p of this.particles) drawParticle(p);
-      drawHUD(this);
+      renderGame(this);
     },
   };
 
