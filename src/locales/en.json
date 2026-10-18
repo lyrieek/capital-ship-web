@@ -28,5 +28,24 @@
     "sprites": "Sprite Count",
     "type": "Type",
     "radius": "Bounding Radius"
+  },
+  "hud": {
+    "title": "2D Naval Battle · Auto Battle",
+    "weaponInfo": "Main Gun 10 DMG · Torpedo 30 DMG · Dodge Turn 90°",
+    "winnerRed": "Red Victory",
+    "winnerBlue": "Blue Victory",
+    "winnerDraw": "Mutual Destruction",
+    "restartHint": "Click to restart"
+  },
+  "playground": {
+    "controls": "Controls",
+    "titleLabel": "Title",
+    "weaponLabel": "Weapon Info",
+    "gameOver": "Game Over",
+    "winner": "Winner",
+    "winnerNone": "No Winner",
+    "winnerRed": "Red",
+    "winnerBlue": "Blue",
+    "reset": "Reset"
   }
 }

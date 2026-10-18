@@ -25,6 +25,9 @@
         "no-non-null-assertion": "off",
         "no-plusplus": "off",
         "no-continue": "off",
+        "no-console": "warn",
+        "no-zero-fractions": "off",
+        "no-optional-chaining": "off",
         "explicit-function-return-type": "off",
         "explicit-module-boundary-types": "off",
         "func-style": "off",
@@ -33,9 +36,8 @@
         "method-signature-style": "off",
         "sort-keys": "off",
         "explicit-member-accessibility": "off",
-        "no-zero-fractions": "off",
         "prefer-destructuring": "off",
-        "no-optional-chaining": "off",
+        "capitalized-comments": "off",
         "complexity": [
             "warn",
             30

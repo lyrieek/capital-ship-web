@@ -1,6 +1,5 @@
 // DynamicTexture 的矢量绘制：沿用原有 Canvas 2D 画法，只是绘制到贴图上下文上
 import type { DynamicTexture } from "@babylonjs/core";
-import type { GameState } from "./types";
 import type { Ship } from "./ship.d";
 import { TAU } from "./utils";
 
@@ -156,38 +155,4 @@ export function paintParticle(ctx: CanvasRenderingContext2D, width: number, heig
   ctx.fillRect(0, 0, width, height);
 }
 
-/**
- * 绘制全屏 HUD 贴图
- * TODO: 用 Babylon GUI 替代全屏 HUD 贴图，降低重绘开销
- * @param ctx Canvas 2D 上下文
- * @param width 贴图宽度
- * @param height 贴图高度
- * @param game 游戏状态
- */
-export function paintHud(ctx: CanvasRenderingContext2D, width: number, height: number, game: GameState): void {
-  ctx.clearRect(0, 0, width, height);
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.font = "600 15px system-ui, sans-serif";
-  ctx.fillStyle = "rgba(180,215,245,.75)";
-  ctx.fillText("2D 海战 · 自动对战", 22, 32);
-
-  ctx.textAlign = "right";
-  ctx.font = "400 13px system-ui, sans-serif";
-  ctx.fillStyle = "rgba(140,175,205,.6)";
-  ctx.fillText("主炮 10 伤害 · 鱼雷 30 伤害 · 规避转体 90°", width - 22, 32);
-
-  if (!game.over) return;
-
-  ctx.fillStyle = "rgba(4,12,22,.65)";
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.textAlign = "center";
-  ctx.font = "700 46px system-ui, sans-serif";
-  ctx.fillStyle = game.winnerTeam === "red" ? "#ff7b6b" : game.winnerTeam === "blue" ? "#7cc4ff" : "#cfe3f5";
-  ctx.fillText(game.winnerTeam === "red" ? "红方胜利" : game.winnerTeam === "blue" ? "蓝方胜利" : "同归于尽", width / 2, height / 2 - 10);
-
-  ctx.font = "400 16px system-ui, sans-serif";
-  ctx.fillStyle = "rgba(200,225,245,.75)";
-  ctx.fillText("点击画面重新开始", width / 2, height / 2 + 40);
-}
+// 全屏 HUD 已改为 React + Babylon GUI 组件（src/components/Hud.tsx），本函数不再使用。

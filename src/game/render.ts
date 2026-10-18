@@ -2,7 +2,7 @@
 // 相机固定在 -Z 方向俯视 XY 平面，世界单位与游戏像素坐标一一对应。
 // 后续还需优化 舰船/炮弹/粒子改为共享图集的 InstancedMesh/thin instance
 import { Camera, Color3, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { paintHud, paintParticle, paintShip, paintShipHud, paintShell, paintTorpedo, refreshWater, toCanvas2D } from "./textures";
+import { paintParticle, paintShip, paintShipHud, paintShell, paintTorpedo, refreshWater, toCanvas2D } from "./textures";
 import type { GameState, ParticleItem, Projectile } from "./types";
 import type { Ship } from "./ship.d";
 import { H, W } from "./utils";
@@ -27,9 +27,6 @@ const HUD_H = 56;
 // 场景资源
 let engine: Engine | null = null;
 let scene: Scene | null = null;
-
-let hudTexture: DynamicTexture | null = null;
-let lastHudOver: boolean | null = null;
 
 let shellMaterial: StandardMaterial | null = null;
 let torpMaterial: StandardMaterial | null = null;
@@ -105,13 +102,6 @@ function createParticleResources() {
   particleTexture = new DynamicTexture("particleTexture", { width: 32, height: 32 }, scene!, true);
   paintParticle(toCanvas2D(particleTexture), 32, 32);
   particleTexture.update();
-}
-function createHudLayer() {
-  hudTexture = new DynamicTexture("hudTexture", { width: W, height: H }, scene!, true);
-  const mesh = createLayerPlane("hudLayer", W, H, RG_OVERLAY);
-  mesh.material = makeSpriteMaterial("hudMaterial", hudTexture);
-  mesh.position.copyFrom(worldToScene(W / 2, H / 2));
-  lastHudOver = null;
 }
 
 function poolGet(pool: PlaneMesh[], index: number, create: (index: number) => PlaneMesh): PlaneMesh {
@@ -244,12 +234,6 @@ function syncParticles(particles: ParticleItem[]) {
   for (; index < particlePool.length; index++) particlePool[index].setEnabled(false);
 }
 
-function syncHud(game: GameState) {
-  if (lastHudOver === game.over || !hudTexture) return;
-  paintHud(toCanvas2D(hudTexture), W, H, game);
-  hudTexture.update();
-  lastHudOver = game.over;
-}
 export function disposeRender() {
   shipVisuals.clear();
   projectilePool.length = 0;
@@ -258,8 +242,6 @@ export function disposeRender() {
   torpMaterial = null;
   particleTexture = null;
   waterTexture = null;
-  hudTexture = null;
-  lastHudOver = null;
   if (engine) {
     engine.dispose();
     engine = null;
@@ -287,7 +269,6 @@ export function initRender(canvas: HTMLCanvasElement): Engine {
   createWater();
   createProjectileMaterials();
   createParticleResources();
-  createHudLayer();
   return engine;
 }
 
@@ -297,6 +278,5 @@ export function renderGame(game: GameState) {
   syncShips(game);
   syncProjectiles(game.projectiles);
   syncParticles(game.particles);
-  syncHud(game);
   scene.render();
 }
