@@ -4,6 +4,7 @@ import LanguageSwitcher from "./components/LanguageSwitcher";
 import BattleCanvas from "./components/BattleCanvas";
 import TestHub from "./playground/TestHub";
 import TestExpanse from "./playground/TestExpanse";
+import TestWeapons from "./playground/TestWeapons";
 import "./App.css";
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
     { to: "/", label: "游戏", end: true },
     { to: "/hub", label: "HUD 测试中心" },
     { to: "/expanse", label: t("expanse.title") },
+    { to: "/weapons", label: t("weapons.title") },
   ];
 
   return (
@@ -22,12 +24,7 @@ function App() {
         <h1>{t("title")}</h1>
         <nav className="app-nav">
           {NAV_ITEMS.map(({ to, label, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) => (isActive ? "active" : "")}
-            >
+            <NavLink key={to} to={to} end={end} className={({ isActive }) => (isActive ? "active" : "")}>
               {label}
             </NavLink>
           ))}
@@ -46,6 +43,7 @@ function App() {
           />
           <Route path="/hub" element={<TestHub />} />
           <Route path="/expanse" element={<TestExpanse />} />
+          <Route path="/weapons" element={<TestWeapons />} />
         </Routes>
       </main>
     </div>

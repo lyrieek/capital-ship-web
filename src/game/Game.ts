@@ -3,7 +3,9 @@ import type { GameState, ParticleItem } from "./types";
 import { ShipImpl } from "./ship";
 import type { Ship } from "./ship.d";
 import { renderGame } from "./render";
-import { H, W } from "./utils";
+import { H, W, P } from "./utils";
+// 武器的发射逻辑与弹药更新已抽离到 src/weapons
+import { fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
 
 const TAU = Math.PI * 2;
 
@@ -65,61 +67,24 @@ export function initializeGame(): GameState {
     },
 
     fireShell(ship: Ship, target: Ship) {
-      const S = 330;
-      let t = Math.hypot(target.x - ship.x, target.y - ship.y) / S;
-      for (let i = 0; i < 4; i++) {
-        const px = target.x + target.vx * t;
-        const py = target.y + target.vy * t;
-        t = Math.hypot(px - ship.x, py - ship.y) / S;
-      }
-      const ax = target.x + target.vx * t + Math.random() * 90 - 45;
-      const ay = target.y + target.vy * t + Math.random() * 90 - 45;
-      const ang = Math.atan2(ay - ship.y, ax - ship.x);
-      const mx = ship.x + Math.cos(ang) * 46;
-      const my = ship.y + Math.sin(ang) * 46;
-
-      this.projectiles.push({
-        type: "shell",
-        owner: ship,
-        x: mx,
-        y: my,
-        vx: Math.cos(ang) * S,
-        vy: Math.sin(ang) * S,
-        r: 26,
-        dmg: 10,
-        life: 5,
-        trail: [],
+      const spec = getWeaponSpec("shell");
+      const from = { x: ship.x, y: ship.y };
+      const aim = predictAim(from, target, spec.speed);
+      const projectiles = fireWeapon("shell", ship, from, aim, {
+        bounds: { width: W, height: H, margin: 20 },
+        onMuzzle: (point) => createParticles(point.x, point.y, spec.muzzleParticles, spec.muzzleColor, this.particles),
       });
-
-      createParticles(mx, my, 6, "#ffd166", this.particles);
+      for (const projectile of projectiles) this.projectiles.push(projectile);
     },
 
     fireTorpedo(ship: Ship, target: Ship) {
-      const S = 250;
-      let t = Math.hypot(target.x - ship.x, target.y - ship.y) / S;
-      for (let i = 0; i < 4; i++) {
-        const px = target.x + target.vx * t;
-        const py = target.y + target.vy * t;
-        t = Math.hypot(px - ship.x, py - ship.y) / S;
-      }
-      const ax = target.x + target.vx * t + Math.random() * 24 - 12;
-      const ay = target.y + target.vy * t + Math.random() * 24 - 12;
-      const ang = Math.atan2(ay - ship.y, ax - ship.x);
-      const mx = ship.x + Math.cos(ang) * 46;
-      const my = ship.y + Math.sin(ang) * 46;
-
-      this.projectiles.push({
-        type: "torp",
-        owner: ship,
-        x: mx,
-        y: my,
-        vx: Math.cos(ang) * S,
-        vy: Math.sin(ang) * S,
-        r: 34,
-        dmg: 30,
-        life: 9,
-        trail: [],
+      const spec = getWeaponSpec("torp");
+      const from = { x: ship.x, y: ship.y };
+      const aim = predictAim(from, target, spec.speed);
+      const projectiles = fireWeapon("torp", ship, from, aim, {
+        bounds: { width: W, height: H, margin: 20 },
       });
+      for (const projectile of projectiles) this.projectiles.push(projectile);
     },
 
     burst(x: number, y: number, n: number, color: string) {
@@ -135,8 +100,8 @@ export function initializeGame(): GameState {
           const dx = b.x - a.x,
             dy = b.y - a.y;
           const d = Math.hypot(dx, dy);
-          if (d < 80 && d > 0.001) {
-            const push = (80 - d) * 0.5;
+          if (d < P.minSep && d > 0.001) {
+            const push = (P.minSep - d) * 0.5;
             const nx = dx / d,
               ny = dy / d;
             a.x -= nx * push;
@@ -153,36 +118,17 @@ export function initializeGame(): GameState {
     },
 
     updateProjectiles(dt: number) {
-      for (const p of this.projectiles) {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.life -= dt;
-
-        p.trail.push(p.x, p.y);
-        if (p.trail.length > 24) p.trail.splice(0, 2);
-
-        if (p.life <= 0 || p.x < -60 || p.x > W || p.y < -60 || p.y > H) {
-          p.dead = true;
-          continue;
-        }
-
-        for (const s of this.ships) {
-          if (s === p.owner || s.hp <= 0) continue;
-
-          const dx = p.x - s.x;
-          const dy = p.y - s.y;
-          const rx = s.len / 2 + p.r;
-          const ry = s.wid / 2 + p.r;
-
-          if ((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1) {
-            p.dead = true;
-            s.takeDamage(p.dmg);
-            createParticles(p.x, p.y, p.type === "torp" ? 30 : 12, p.type === "torp" ? "#ff9f43" : "#ffd166", this.particles);
-            break;
-          }
-        }
-      }
-      this.projectiles = this.projectiles.filter((p) => !p.dead);
+      updateWeaponProjectiles(dt, {
+        projectiles: this.projectiles,
+        targets: this.ships,
+        worldWidth: W,
+        worldHeight: H,
+        onHit: (projectile, target, x, y) => {
+          target.takeDamage(projectile.dmg);
+          const spec = getWeaponSpec(projectile.type);
+          createParticles(x, y, spec.impactParticles, spec.impactColor, this.particles);
+        },
+      });
     },
 
     updateParticles(dt: number) {

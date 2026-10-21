@@ -1,14 +1,8 @@
 // DynamicTexture 的矢量绘制：沿用原有 Canvas 2D 画法，只是绘制到贴图上下文上
-import type { DynamicTexture } from "@babylonjs/core";
 import type { Ship } from "./ship.d";
-import { TAU } from "./utils";
-
-// Babylon 的 ICanvasRenderingContext 未声明 textAlign/textBaseline，运行时实际就是标准 2D 上下文
-export function toCanvas2D(texture: DynamicTexture): CanvasRenderingContext2D {
-  return texture.getContext() as unknown as CanvasRenderingContext2D;
-}
 
 // 海水（海浪）的绘制已抽离到 src/expanse/ocean.ts
+// 炮弹 / 鱼雷的绘制已抽离到 src/weapons/cannon.ts、src/weapons/torpedo.ts
 
 /**
  * 绘制舰船贴图
@@ -86,35 +80,6 @@ export function paintShipHud(ctx: CanvasRenderingContext2D, ship: Ship, width: n
     ctx.fillStyle = ship.state === "dodge" ? "#fbbf24" : "#7dd3fc";
     ctx.fillText(ship.state === "dodge" ? "⚡ 规避转体 · 全速 · 射速减半" : "↩ 回正中 · 全速 · 射速减半", width / 2, 44);
   }
-}
-
-export function paintShell(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-  ctx.clearRect(0, 0, width, height);
-  const cx = width / 2;
-  const cy = height / 2;
-  ctx.beginPath();
-  ctx.arc(cx, cy, width * 0.25, 0, TAU);
-  ctx.fillStyle = "rgba(255,210,100,.22)";
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(cx, cy, width * 0.12, 0, TAU);
-  ctx.fillStyle = "#ffe08a";
-  ctx.fill();
-}
-
-export function paintTorpedo(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-  ctx.clearRect(0, 0, width, height);
-  ctx.save();
-  ctx.translate(width / 2, height / 2);
-  ctx.fillStyle = "#8ee7ff";
-  ctx.beginPath();
-  ctx.ellipse(0, 0, width * 0.35, height * 0.32, 0, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = "#e6fbff";
-  ctx.beginPath();
-  ctx.arc(width * 0.22, 0, height * 0.16, 0, TAU);
-  ctx.fill();
-  ctx.restore();
 }
 
 export function paintParticle(ctx: CanvasRenderingContext2D, width: number, height: number): void {

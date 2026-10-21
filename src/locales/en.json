@@ -31,7 +31,7 @@
   },
   "hud": {
     "title": "2D Naval Battle · Auto Battle",
-    "weaponInfo": "Main Gun 10 DMG · Torpedo 30 DMG · Dodge Turn 90°",
+    "weaponInfo": "Main Gun 10 DMG (arc) · Torpedo 30 DMG ×3-5 · Dodge Turn 90°",
     "winnerRed": "Red Victory",
     "winnerBlue": "Blue Victory",
     "winnerDraw": "Mutual Destruction",
@@ -66,5 +66,28 @@
     "waveFrequency": "Frequency",
     "waveSpeed": "Wave Speed",
     "reset": "Reset"
+  },
+  "weapons": {
+    "title": "Weapon Debug",
+    "controls": "Controls",
+    "weapon": "Weapon",
+    "shell": "Main Gun (Shell)",
+    "torp": "Torpedo",
+    "fire": "Fire Settings",
+    "salvo": "Salvo Size",
+    "bend": "Arc Bend",
+    "showPath": "Show Trajectory",
+    "showTrail": "Show Trails",
+    "fireRandom": "Random Fire",
+    "clear": "Clear",
+    "reset": "Reset",
+    "hint": "Click the canvas to fire at that point; direction and distance vary randomly.",
+    "fps": "FPS",
+    "live": "In Flight",
+    "fired": "Fired",
+    "defaultSalvo": "Default Salvo",
+    "speed": "Speed",
+    "damage": "Damage",
+    "cooldown": "Cooldown"
   }
 }

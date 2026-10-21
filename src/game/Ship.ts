@@ -1,6 +1,11 @@
 import type { Ship, ShipConfig, ThreatItem } from "./ship.d";
 import { P, rand, clamp, angleDiff, approachAngle } from "./utils";
 import { getGameInstance } from "./Game";
+// 武器参数集中在 src/weapons
+import { getWeaponSpec } from "../weapons";
+
+const CANNON = getWeaponSpec("shell");
+const TORPEDO = getWeaponSpec("torp");
 
 export class ShipImpl implements Ship {
   x: number;
@@ -58,8 +63,8 @@ export class ShipImpl implements Ship {
     this.vx = 0;
     this.vy = 0;
 
-    this.gunCD = rand(0.8, 2.0);
-    this.torpCD = rand(4.0, 7.0);
+    this.gunCD = rand(CANNON.initialCooldownMin, CANNON.initialCooldownMax);
+    this.torpCD = rand(TORPEDO.initialCooldownMin, TORPEDO.initialCooldownMax);
     this.hitFlash = 0;
     this.recoil = 0;
   }
@@ -112,8 +117,8 @@ export class ShipImpl implements Ship {
         cy = ry + rvy * t;
       // 未击中距离
       const miss = Math.hypot(cx, cy);
-      // 鱼雷危险半径48，炮弹危险半径40
-      const danger = p.type === "torp" ? 48 : 40;
+      // 危险半径按弹药类型取：鱼雷 48，炮弹 40
+      const danger = getWeaponSpec(p.type).dangerRadius;
 
       if (miss < danger && (!best || t < best.t)) best = { t, p, miss };
     }
@@ -227,7 +232,7 @@ export class ShipImpl implements Ship {
       // 主炮冷却和发射
       this.gunCD -= dt * rate;
       if (this.gunCD <= 0) {
-        this.gunCD = rand(1.6, 2.4);
+        this.gunCD = rand(CANNON.cooldownMin, CANNON.cooldownMax);
         const game = getGameInstance();
         if (game) {
           game.fireShell(this, e);
@@ -235,10 +240,10 @@ export class ShipImpl implements Ship {
         }
       }
 
-      // 鱼雷冷却和发射
+      // 鱼雷冷却和发射（低频齐射，一次 3~5 发）
       this.torpCD -= dt * rate;
       if (this.torpCD <= 0) {
-        this.torpCD = rand(6, 9);
+        this.torpCD = rand(TORPEDO.cooldownMin, TORPEDO.cooldownMax);
         const game = getGameInstance();
         if (game) {
           game.fireTorpedo(this, e);

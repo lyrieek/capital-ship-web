@@ -1,3 +1,6 @@
+// 弹药结构定义在 src/weapons
+import type { Projectile } from "../weapons";
+
 export interface ShipConfig {
   // X坐标
   x: number;

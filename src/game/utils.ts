@@ -1,5 +1,3 @@
-import type { MovingPoint } from "./types";
-
 export interface GameConfig {
   // 基础航速（像素/秒）
   moveSpeed: number;
@@ -21,24 +19,6 @@ export interface GameConfig {
 
   // 规避横向偏移距离（保留参考）
   dodgeSideDist: number;
-
-  // 主炮弹速度（像素/秒）
-  shellSpeed: number;
-
-  // 主炮弹伤害值
-  shellDmg: number;
-
-  // 主炮弹碰撞半径
-  shellR: number;
-
-  // 鱼雷速度（像素/秒）
-  torpSpeed: number;
-
-  // 鱼雷伤害值
-  torpDmg: number;
-
-  // 鱼雷碰撞半径
-  torpR: number;
 
   // 规避/回正时武器射速惩罚系数
   firePenalty: number;
@@ -62,12 +42,6 @@ export const P: GameConfig = {
   dodgeDuration: 1.15,
   recoverDuration: 1.3,
   dodgeSideDist: 70,
-  shellSpeed: 330,
-  shellDmg: 10,
-  shellR: 26,
-  torpSpeed: 250,
-  torpDmg: 30,
-  torpR: 34,
   firePenalty: 0.5,
   minSep: 80,
   yMin: 70,
@@ -102,22 +76,4 @@ export function approachAngle(cur: number, target: number, step: number): number
   const d = angleDiff(cur, target);
   if (Math.abs(d) <= step) return target;
   return cur + Math.sign(d) * step;
-}
-
-/**
- * 预测瞄准点（考虑目标运动）
- * @param sx 射击位置x坐标
- * @param sy 射击位置y坐标
- * @param target 目标舰船对象
- * @param speed 弹速
- * @returns 包含预测坐标和时间的对象
- */
-export function predictAim(sx: number, sy: number, target: MovingPoint, speed: number): { x: number; y: number; t: number } {
-  let t = Math.hypot(target.x - sx, target.y - sy) / speed;
-  for (let i = 0; i < 4; i++) {
-    const px = target.x + target.vx * t;
-    const py = target.y + target.vy * t;
-    t = Math.hypot(px - sx, py - sy) / speed;
-  }
-  return { x: target.x + target.vx * t, y: target.y + target.vy * t, t };
 }

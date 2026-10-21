@@ -1,4 +1,6 @@
 import type { Ship } from "./ship.d";
+// 弹药结构已抽离到 src/weapons（游戏层只引用，不重复定义）
+import type { Projectile } from "../weapons";
 
 // Game types and interfaces
 export interface Vector2 {
@@ -17,26 +19,6 @@ export interface MovingPoint {
   vx: number;
   // Y方向速度
   vy: number;
-}
-
-/**
- * 武器弹药类型接口
- */
-export interface Projectile extends MovingPoint {
-  // 弹药类型：shell-炮弹，torp-鱼雷
-  type: "shell" | "torp";
-  // 发射该弹药的舰船
-  owner: Ship;
-  // 碰撞半径
-  r: number;
-  // 伤害值
-  dmg: number;
-  // 剩余生命时间
-  life: number;
-  // 轨迹点坐标列表 [x1,y1,x2,y2,...]
-  trail: number[];
-  // 是否已标记为删除
-  dead?: boolean;
 }
 
 /**

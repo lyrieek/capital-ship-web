@@ -200,7 +200,7 @@ export function paintOcean(ctx: CanvasRenderingContext2D, width: number, height:
   if (preset.sparkle) paintSparkle(ctx, width, height, time);
 }
 
-/** 
+/**
  * 重绘并上传海洋贴图（每帧调用以播放波浪动画）
  */
 export function refreshOcean(texture: DynamicTexture, width: number, height: number, time: number, kind: OceanKind = DEFAULT_OCEAN_KIND): void {
@@ -210,7 +210,7 @@ export function refreshOcean(texture: DynamicTexture, width: number, height: num
   texture.update();
 }
 
-/** 
+/**
  * 创建海洋贴图并绘制首帧
  */
 export function createOceanTexture(scene: Scene, kind: OceanKind, width: number, height: number): DynamicTexture {

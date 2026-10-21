@@ -2,9 +2,11 @@
 // 相机固定在 -Z 方向俯视 XY 平面，世界单位与游戏像素坐标一一对应。
 // 后续还需优化 舰船/炮弹/粒子改为共享图集的 InstancedMesh/thin instance
 import { Camera, Color3, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { paintParticle, paintShip, paintShipHud, paintShell, paintTorpedo, toCanvas2D } from "./textures";
+import { paintParticle, paintShip, paintShipHud } from "./textures";
 import { createOceanSurface, getOceanKind, type OceanSurface } from "../expanse";
-import type { GameState, ParticleItem, Projectile } from "./types";
+// 弹药贴图与渲染已抽离到 src/weapons
+import { createWeaponRender, toCanvas2D, type WeaponRender } from "../weapons";
+import type { GameState, ParticleItem } from "./types";
 import type { Ship } from "./ship.d";
 import { H, W } from "./utils";
 
@@ -29,11 +31,11 @@ const HUD_H = 56;
 let engine: Engine | null = null;
 let scene: Scene | null = null;
 
-let shellMaterial: StandardMaterial | null = null;
-let torpMaterial: StandardMaterial | null = null;
 let particleTexture: DynamicTexture | null = null;
 // 海面（海浪贴图 + 材质 + 平面），具体绘制在 src/expanse/ocean.ts
 let oceanSurface: OceanSurface | null = null;
+// 弹药渲染（贴图 / Mesh 池 / 弹道），具体实现在 src/weapons/render.ts
+let weaponRender: WeaponRender | null = null;
 
 // 每艘舰船对应的可视对象（reset 会重建舰船，故按对象身份做增删）
 interface ShipVisual {
@@ -49,8 +51,7 @@ interface ShipVisual {
 }
 const shipVisuals = new Map<Ship, ShipVisual>();
 
-// 炮弹 / 粒子使用对象池复用 Mesh，避免频繁创建销毁
-const projectilePool: PlaneMesh[] = [];
+// 粒子使用对象池复用 Mesh，避免频繁创建销毁
 const particlePool: PlaneMesh[] = [];
 
 // 游戏像素坐标 -> 场景坐标（游戏原点在左上、y 向下；场景居中、y 向上）
@@ -90,18 +91,6 @@ function createWater() {
     textureHeight: 288,
     renderingGroupId: RG_WATER,
   });
-}
-
-function createProjectileMaterials() {
-  const shellTexture = new DynamicTexture("shellTexture", { width: 32, height: 32 }, scene!, true);
-  paintShell(toCanvas2D(shellTexture), 32, 32);
-  shellTexture.update();
-  shellMaterial = makeSpriteMaterial("shellMaterial", shellTexture);
-
-  const torpTexture = new DynamicTexture("torpTexture", { width: 48, height: 20 }, scene!, true);
-  paintTorpedo(toCanvas2D(torpTexture), 48, 20);
-  torpTexture.update();
-  torpMaterial = makeSpriteMaterial("torpMaterial", torpTexture);
 }
 
 function createParticleResources() {
@@ -195,29 +184,6 @@ function syncShips(game: GameState) {
   }
 }
 
-function createProjectileMesh(index: number): PlaneMesh {
-  return createLayerPlane(`projectile_${index}`, 1, 1, RG_FX);
-}
-
-/**
- * 同步炮弹/鱼雷渲染状态
- * TODO: 画出炮弹/鱼雷的尾迹（原 Canvas 版本有拖尾线条）
- */
-function syncProjectiles(projectiles: Projectile[]) {
-  let index = 0;
-  for (const projectile of projectiles) {
-    const mesh = poolGet(projectilePool, index, createProjectileMesh);
-    const torp = projectile.type === "torp";
-    mesh.material = torp ? torpMaterial : shellMaterial;
-    mesh.position.copyFrom(worldToScene(projectile.x, projectile.y));
-    mesh.rotation.z = torp ? -Math.atan2(projectile.vy, projectile.vx) : 0;
-    mesh.scaling.set(torp ? 22 : 18, torp ? 9 : 18, 1);
-    mesh.setEnabled(true);
-    index++;
-  }
-  for (; index < projectilePool.length; index++) projectilePool[index].setEnabled(false);
-}
-
 function createParticleMesh(index: number): PlaneMesh {
   const mesh = createLayerPlane(`particle_${index}`, 1, 1, RG_FX);
   mesh.material = makeSpriteMaterial(`particleMaterial_${index}`, particleTexture!);
@@ -242,13 +208,12 @@ function syncParticles(particles: ParticleItem[]) {
 
 export function disposeRender() {
   shipVisuals.clear();
-  projectilePool.length = 0;
   particlePool.length = 0;
-  shellMaterial = null;
-  torpMaterial = null;
   particleTexture = null;
   oceanSurface?.dispose();
   oceanSurface = null;
+  weaponRender?.dispose();
+  weaponRender = null;
   if (engine) {
     engine.dispose();
     engine = null;
@@ -274,7 +239,12 @@ export function initRender(canvas: HTMLCanvasElement): Engine {
   scene.activeCamera = camera;
 
   createWater();
-  createProjectileMaterials();
+  weaponRender = createWeaponRender({
+    scene,
+    worldWidth: W,
+    worldHeight: H,
+    renderingGroupId: RG_FX,
+  });
   createParticleResources();
   return engine;
 }
@@ -286,7 +256,7 @@ export function renderGame(game: GameState) {
   if (oceanSurface && oceanSurface.kind !== kind) oceanSurface.setKind(kind);
   oceanSurface?.refresh(game.time);
   syncShips(game);
-  syncProjectiles(game.projectiles);
+  weaponRender?.sync(game.projectiles);
   syncParticles(game.particles);
   scene.render();
 }

@@ -31,7 +31,7 @@
   },
   "hud": {
     "title": "2D 海战 · 自动对战",
-    "weaponInfo": "主炮 10 伤害 · 鱼雷 30 伤害 · 规避转体 90°",
+    "weaponInfo": "主炮 10 伤害（曲射） · 鱼雷 30 伤害 ×3~5 · 规避转体 90°",
     "winnerRed": "红方胜利",
     "winnerBlue": "蓝方胜利",
     "winnerDraw": "同归于尽",
@@ -66,5 +66,28 @@
     "waveFrequency": "波数",
     "waveSpeed": "波速",
     "reset": "重置"
+  },
+  "weapons": {
+    "title": "武器调试",
+    "controls": "控制面板",
+    "weapon": "武器类型",
+    "shell": "主炮（炮弹）",
+    "torp": "鱼雷",
+    "fire": "开火设置",
+    "salvo": "发射次数",
+    "bend": "曲射弯曲度",
+    "showPath": "显示弹道",
+    "showTrail": "显示尾迹",
+    "fireRandom": "随机开火",
+    "clear": "清空弹药",
+    "reset": "重置",
+    "hint": "在右侧画布点击即可向该点开火，方向与距离都会随机浮动。",
+    "fps": "帧率",
+    "live": "在场弹药",
+    "fired": "累计发射",
+    "defaultSalvo": "默认齐射",
+    "speed": "弹速",
+    "damage": "伤害",
+    "cooldown": "冷却"
   }
 }
