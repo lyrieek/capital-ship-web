@@ -14,6 +14,8 @@ import {
   type WeaponId,
   type WeaponRender,
 } from "../weapons";
+import "./playground.css";
+import "./TestWeapons.css";
 
 const TAU = Math.PI * 2;
 

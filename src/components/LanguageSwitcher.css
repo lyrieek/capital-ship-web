@@ -2,10 +2,11 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  margin-left: auto;
 }
 
 .language-switcher label {
-  font-weight: 500;
+  font-weight: bold;
 }
 
 .language-switcher select {

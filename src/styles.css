@@ -1,3 +1,4 @@
+/* 全局基础样式：重置与元素默认值（不含具体模块的样式） */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -9,47 +10,6 @@ body {
   background-color: #f5f5f5;
   color: #333;
   line-height: 1.6;
-}
-
-.app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-.app-header {
-  background-color: #2c3e50;
-  color: white;
-  padding: 1rem;
-  text-align: center;
-}
-
-.app-header h1 {
-  margin: 0;
-  font-size: 1.8rem;
-}
-
-.app-main {
-  display: flex;
-  flex: 1;
-  padding: 1rem;
-  gap: 1rem;
-}
-
-.map-section {
-  flex: 2;
-  min-width: 0;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-}
-
-.sidebar {
-  flex: 1;
-  background-color: white;
-  border-radius: 8px;
-  padding: 1rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 h2,

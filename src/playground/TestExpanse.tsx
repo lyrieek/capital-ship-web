@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, Color4, Engine, FreeCamera, Scene, Vector3 } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { createOceanSurface, OCEAN_PRESETS, type OceanKind, type OceanSurface } from "../expanse";
+import "./playground.css";
+import "./TestExpanse.css";
 
 const TEXTURE_SIZES = [256, 512, 1024];
 

@@ -1,0 +1,20 @@
+/* 海洋调试页：当前海域参数统计 */
+.expanse-stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.6rem;
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #1d5c9e;
+  font-size: 0.85rem;
+}
+
+.expanse-stats dt {
+  color: #7cc4ff;
+}
+
+.expanse-stats dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

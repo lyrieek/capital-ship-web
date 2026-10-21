@@ -1,30 +1,28 @@
-/* App-specific styles */
+/* 应用外壳：页头、主导航、主内容区与战场画布 */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
 .app-header {
+  background-color: #2c3e50;
+  color: white;
+  padding: 1rem;
+  text-align: center;
   border-bottom: 2px solid #3498db;
 }
 
-/* 战场画布：随容器宽度缩放，保持 16:9（与 1600x900 的世界坐标一致） */
-.map-section canvas {
-  display: block;
-  width: 100%;
-  max-width: 1600px;
-  aspect-ratio: 16 / 9;
-  touch-action: none;
+.app-header h1 {
+  margin: 0;
+  font-size: 1.8rem;
 }
 
-.language-switcher {
-  margin-left: auto;
+.app-main {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.language-switcher label {
-  font-weight: bold;
-}
-
-.language-switcher select {
-  padding: 0.3rem 0.5rem;
+  flex: 1;
+  padding: 1rem;
+  gap: 1rem;
 }
 
 .app-nav {
@@ -44,142 +42,27 @@
   background-color: rgba(255, 255, 255, 0.15);
 }
 
-/* HUD 测试中心布局 */
-.playground {
+.map-section {
+  flex: 2;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
-  color: #cfe3f5;
+  justify-content: center;
+  align-items: flex-start;
 }
 
-.playground-body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-.playground-controls {
-  width: 280px;
-  flex-shrink: 0;
-  padding: 1.5rem;
-  background: #0a1c2e;
-  border-right: 1px solid #1d5c9e;
-}
-
-.playground-controls h2 {
-  margin-top: 0;
-  margin-bottom: 1rem;
-  color: #7cc4ff;
-}
-
-.playground-controls label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.8rem;
-  cursor: pointer;
-}
-
-.playground-controls fieldset {
-  border: 1px solid #1d5c9e;
-  border-radius: 4px;
-  padding: 0.8rem;
-  margin-bottom: 1rem;
-}
-
-.playground-controls legend {
-  padding: 0 0.4rem;
-  color: #7cc4ff;
-}
-
-.playground-controls button {
-  width: 100%;
-  margin-top: 0.5rem;
-}
-
-.playground-preview {
-  flex: 1;
-  position: relative;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.playground-canvas {
+/* 战场画布：随容器宽度缩放，保持 16:9（与 1600x900 的世界坐标一致） */
+.map-section canvas {
   display: block;
-  border: 1px solid darkblue;
   width: 100%;
   max-width: 1600px;
-  max-height: 900px;
+  aspect-ratio: 16 / 9;
+  touch-action: none;
 }
 
-/* 调试页控件行：左标题、右数值，下方是滑杆或下拉框 */
-.playground-controls label.playground-field {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 0.4rem 0.5rem;
-}
-
-.playground-field input[type="range"] {
-  grid-column: 1 / -1;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-}
-
-.playground-field select {
-  min-width: 5rem;
-  margin: 0;
-}
-
-.playground-value {
-  color: #7cc4ff;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 海洋调试页：当前海域参数统计 */
-.expanse-stats {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.25rem 0.6rem;
-  margin-top: 1rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid #1d5c9e;
-  font-size: 0.85rem;
-}
-
-.expanse-stats dt {
-  color: #7cc4ff;
-}
-
-.expanse-stats dd {
-  margin: 0;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 武器调试页：当前武器参数统计 */
-.weapons-stats {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.25rem 0.6rem;
-  margin-top: 1rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid #1d5c9e;
-  font-size: 0.85rem;
-}
-
-.weapons-stats dt {
-  color: #7cc4ff;
-}
-
-.weapons-stats dd {
-  margin: 0;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.weapons-hint {
-  color: #9fc4e0;
-  font-size: 0.85rem;
-  line-height: 1.4;
+.sidebar {
+  flex: 1;
+  background-color: white;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
