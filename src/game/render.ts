@@ -2,7 +2,8 @@
 // 相机固定在 -Z 方向俯视 XY 平面，世界单位与游戏像素坐标一一对应。
 // 后续还需优化 舰船/炮弹/粒子改为共享图集的 InstancedMesh/thin instance
 import { Camera, Color3, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { paintParticle, paintShip, paintShipHud, paintShell, paintTorpedo, refreshWater, toCanvas2D } from "./textures";
+import { paintParticle, paintShip, paintShipHud, paintShell, paintTorpedo, toCanvas2D } from "./textures";
+import { createOceanSurface, getOceanKind, type OceanSurface } from "../expanse";
 import type { GameState, ParticleItem, Projectile } from "./types";
 import type { Ship } from "./ship.d";
 import { H, W } from "./utils";
@@ -31,7 +32,8 @@ let scene: Scene | null = null;
 let shellMaterial: StandardMaterial | null = null;
 let torpMaterial: StandardMaterial | null = null;
 let particleTexture: DynamicTexture | null = null;
-let waterTexture: DynamicTexture | null = null;
+// 海面（海浪贴图 + 材质 + 平面），具体绘制在 src/expanse/ocean.ts
+let oceanSurface: OceanSurface | null = null;
 
 // 每艘舰船对应的可视对象（reset 会重建舰船，故按对象身份做增删）
 interface ShipVisual {
@@ -79,11 +81,15 @@ function createLayerPlane(name: string, width: number, height: number, group: nu
   return mesh;
 }
 function createWater() {
-  waterTexture = new DynamicTexture("waterTexture", { width: 512, height: 288 }, scene!, true);
-  refreshWater(waterTexture, 512, 288, 0);
-  const mesh = createLayerPlane("water", W, H, RG_WATER);
-  mesh.material = makeSpriteMaterial("waterMaterial", waterTexture);
-  mesh.position.copyFrom(worldToScene(W / 2, H / 2));
+  oceanSurface = createOceanSurface({
+    scene: scene!,
+    kind: getOceanKind(),
+    worldWidth: W,
+    worldHeight: H,
+    textureWidth: 512,
+    textureHeight: 288,
+    renderingGroupId: RG_WATER,
+  });
 }
 
 function createProjectileMaterials() {
@@ -241,7 +247,8 @@ export function disposeRender() {
   shellMaterial = null;
   torpMaterial = null;
   particleTexture = null;
-  waterTexture = null;
+  oceanSurface?.dispose();
+  oceanSurface = null;
   if (engine) {
     engine.dispose();
     engine = null;
@@ -274,7 +281,10 @@ export function initRender(canvas: HTMLCanvasElement): Engine {
 
 export function renderGame(game: GameState) {
   if (!scene) return;
-  refreshWater(waterTexture!, 512, 288, game.time);
+  // 海域以 src/expanse/ocean-state.ts 的状态为准，状态变化后自动切换
+  const kind = getOceanKind();
+  if (oceanSurface && oceanSurface.kind !== kind) oceanSurface.setKind(kind);
+  oceanSurface?.refresh(game.time);
   syncShips(game);
   syncProjectiles(game.projectiles);
   syncParticles(game.particles);

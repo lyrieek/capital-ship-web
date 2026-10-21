@@ -47,5 +47,24 @@
     "winnerRed": "Red",
     "winnerBlue": "Blue",
     "reset": "Reset"
+  },
+  "expanse": {
+    "title": "Ocean Debug",
+    "controls": "Controls",
+    "oceanKind": "Ocean",
+    "shallow": "Shallow Sea",
+    "deep": "Deep Sea",
+    "animation": "Animation",
+    "pause": "Pause",
+    "resume": "Resume",
+    "timeScale": "Time Scale",
+    "textureSize": "Texture Size",
+    "showStats": "Show Stats",
+    "fps": "FPS",
+    "waveRows": "Wave Rows",
+    "waveAmplitude": "Amplitude",
+    "waveFrequency": "Frequency",
+    "waveSpeed": "Wave Speed",
+    "reset": "Reset"
   }
 }

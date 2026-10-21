@@ -8,35 +8,7 @@ export function toCanvas2D(texture: DynamicTexture): CanvasRenderingContext2D {
   return texture.getContext() as unknown as CanvasRenderingContext2D;
 }
 
-// 绘制海水贴图（time 用于波浪相位动画）
-export function paintWater(ctx: CanvasRenderingContext2D, width: number, height: number, time: number): void {
-  const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#0a2c44");
-  gradient.addColorStop(0.5, "#0d3c5c");
-  gradient.addColorStop(1, "#0a2c44");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.strokeStyle = "rgba(120,200,255,.075)";
-  ctx.lineWidth = 2;
-  const rows = 10;
-  for (let i = 0; i < rows; i++) {
-    const y = ((i + 1) / (rows + 1)) * height;
-    ctx.beginPath();
-    for (let x = 0; x <= width; x += width / 40) {
-      const yy = y + Math.sin((x / width) * Math.PI * 4 + time * 1.6 + i) * height * 0.012;
-      if (x === 0) ctx.moveTo(x, yy);
-      else ctx.lineTo(x, yy);
-    }
-    ctx.stroke();
-  }
-}
-
-// 重绘并上传海水贴图（每帧调用以播放波浪动画）
-export function refreshWater(texture: DynamicTexture, width: number, height: number, time: number): void {
-  paintWater(toCanvas2D(texture), width, height, time);
-  texture.update();
-}
+// 海水（海浪）的绘制已抽离到 src/expanse/ocean.ts
 
 /**
  * 绘制舰船贴图

@@ -1,25 +1,36 @@
 import { useTranslation } from "react-i18next";
-import { Route, Routes, Link, useLocation } from "react-router-dom";
+import { Route, Routes, NavLink } from "react-router-dom";
 import LanguageSwitcher from "./components/LanguageSwitcher";
 import BattleCanvas from "./components/BattleCanvas";
 import TestHub from "./playground/TestHub";
+import TestExpanse from "./playground/TestExpanse";
 import "./App.css";
 
 function App() {
   const { t } = useTranslation();
-  const location = useLocation();
+
+  const NAV_ITEMS = [
+    // 根路径必须加 end
+    { to: "/", label: "游戏", end: true },
+    { to: "/hub", label: "HUD 测试中心" },
+    { to: "/expanse", label: t("expanse.title") },
+  ];
 
   return (
     <div className="app">
       <header className="app-header">
         <h1>{t("title")}</h1>
         <nav className="app-nav">
-          <Link to="/" className={location.pathname === "/" ? "active" : ""}>
-            {t("map")}
-          </Link>
-          <Link to="/hub" className={location.pathname === "/hub" ? "active" : ""}>
-            HUD 测试中心
-          </Link>
+          {NAV_ITEMS.map(({ to, label, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) => (isActive ? "active" : "")}
+            >
+              {label}
+            </NavLink>
+          ))}
           <LanguageSwitcher />
         </nav>
       </header>
@@ -34,6 +45,7 @@ function App() {
             }
           />
           <Route path="/hub" element={<TestHub />} />
+          <Route path="/expanse" element={<TestExpanse />} />
         </Routes>
       </main>
     </div>

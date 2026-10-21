@@ -47,5 +47,24 @@
     "winnerRed": "红方",
     "winnerBlue": "蓝方",
     "reset": "重置"
+  },
+  "expanse": {
+    "title": "海洋调试",
+    "controls": "控制面板",
+    "oceanKind": "海域类型",
+    "shallow": "浅海",
+    "deep": "深海",
+    "animation": "动画",
+    "pause": "暂停",
+    "resume": "继续",
+    "timeScale": "时间缩放",
+    "textureSize": "贴图分辨率",
+    "showStats": "显示统计",
+    "fps": "帧率",
+    "waveRows": "波纹行数",
+    "waveAmplitude": "波峰振幅",
+    "waveFrequency": "波数",
+    "waveSpeed": "波速",
+    "reset": "重置"
   }
 }
