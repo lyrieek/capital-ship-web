@@ -31,7 +31,7 @@
   },
   "hud": {
     "title": "2D Naval Battle · Auto Battle",
-    "weaponInfo": "Main Gun 10 DMG (arc) · Torpedo 30 DMG ×3-5 · Dodge Turn 90°",
+    "weaponInfo": "Main Gun 10 DMG (arc · range 1100) · Torpedo 30 DMG ×3-5 · Dodge Turn 90°",
     "winnerRed": "Red Victory",
     "winnerBlue": "Blue Victory",
     "winnerDraw": "Mutual Destruction",
@@ -58,13 +58,17 @@
     "pause": "Pause",
     "resume": "Resume",
     "timeScale": "Time Scale",
-    "textureSize": "Texture Size",
+    "wave": "Wave",
+    "waveHeight": "Wave Height",
+    "specStrength": "Specular Strength",
+    "specPower": "Specular Power",
+    "light": "Light",
+    "lightAzimuth": "Azimuth",
+    "lightElevation": "Elevation",
+    "mesh": "Mesh",
+    "meshSegments": "Segments",
     "showStats": "Show Stats",
     "fps": "FPS",
-    "waveRows": "Wave Rows",
-    "waveAmplitude": "Amplitude",
-    "waveFrequency": "Frequency",
-    "waveSpeed": "Wave Speed",
     "reset": "Reset"
   },
   "weapons": {
@@ -87,6 +91,7 @@
     "fired": "Fired",
     "defaultSalvo": "Default Salvo",
     "speed": "Speed",
+    "range": "Range",
     "damage": "Damage",
     "cooldown": "Cooldown"
   }

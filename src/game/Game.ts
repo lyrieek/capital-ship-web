@@ -5,7 +5,7 @@ import type { Ship } from "./ship.d";
 import { renderGame } from "./render";
 import { H, W, P } from "./utils";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
-import { fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
+import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
 
 const TAU = Math.PI * 2;
 
@@ -127,6 +127,11 @@ export function initializeGame(): GameState {
           target.takeDamage(projectile.dmg);
           const spec = getWeaponSpec(projectile.type);
           createParticles(x, y, spec.impactParticles, spec.impactColor, this.particles);
+        },
+        onLanded: (_projectile, x, y) => {
+          // 炮弹落海：溅起一小片水花（位置收进海面范围内）
+          const splash = clampToBounds({ x, y }, { width: W, height: H });
+          createParticles(splash.x, splash.y, 16, "#bfe9ff", this.particles);
         },
       });
     },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { Camera, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, Scene, Vector3, type StandardMaterial } from "@babylonjs/core";
+import { Camera, Color3, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, Scene, Vector3, type StandardMaterial } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import {
   clampToBounds,
@@ -42,6 +42,8 @@ interface ShotMarker {
   x: number;
   y: number;
   born: number;
+  /** shot-射击落点，splash-落海水花 */
+  kind: "shot" | "splash";
 }
 
 /** 调试页的控件状态：直接对应左侧 HTML 面板的显示内容 */
@@ -107,10 +109,14 @@ function paintLauncher(ctx: CanvasRenderingContext2D, width: number, height: num
   ctx.fillRect(width * 0.12, height * 0.42, width * 0.26, height * 0.16);
 }
 
+// 落点标记颜色（贴图本身画成白色，用材质自发光染色）
+const MARKER_SHOT_COLOR = "#ffd166";
+const MARKER_SPLASH_COLOR = "#7cc4ff";
+
 // 绘制落点标记
 function paintMarker(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   ctx.clearRect(0, 0, width, height);
-  ctx.strokeStyle = "#ffd166";
+  ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.arc(width / 2, height / 2, width * 0.3, 0, TAU);
@@ -206,7 +212,12 @@ function updateMarkers(pool: PlaneMesh[], markers: ShotMarker[], now: number): v
     }
     mesh.setEnabled(true);
     mesh.position.set(marker.x - WORLD_W / 2, WORLD_H / 2 - marker.y, 0);
-    (mesh.material as StandardMaterial).alpha = Math.max(0, 1 - age / MARKER_LIFE);
+    const material = mesh.material as StandardMaterial;
+    material.emissiveColor = Color3.FromHexString(marker.kind === "splash" ? MARKER_SPLASH_COLOR : MARKER_SHOT_COLOR);
+    // 落海水花会扩散变大，普通落点标记保持原样
+    const scale = marker.kind === "splash" ? 0.6 + (age / MARKER_LIFE) * 1.6 : 1;
+    mesh.scaling.setAll(scale);
+    material.alpha = Math.max(0, 1 - age / MARKER_LIFE);
   }
 }
 
@@ -271,7 +282,7 @@ function useWeaponsDebug(): WeaponsDebug {
       bounds: BOUNDS,
     });
     for (const projectile of projectiles) projectilesRef.current.push(projectile);
-    markersRef.current.unshift({ x: aim.x, y: aim.y, born: timeRef.current });
+    markersRef.current.unshift({ x: aim.x, y: aim.y, born: timeRef.current, kind: "shot" });
     if (markersRef.current.length > MARKER_COUNT) markersRef.current.length = MARKER_COUNT;
     setFired((count) => count + projectiles.length);
   }, []);
@@ -414,6 +425,8 @@ function WeaponsControls({ state, actions }: { state: WeaponsState; actions: Wea
         </dd>
         <dt>{t("weapons.speed")}</dt>
         <dd>{spec.speed}</dd>
+        <dt>{t("weapons.range")}</dt>
+        <dd>{spec.range}</dd>
         <dt>{t("weapons.damage")}</dt>
         <dd>{spec.damage}</dd>
         <dt>{t("weapons.cooldown")}</dt>
@@ -470,6 +483,12 @@ export default function TestWeapons() {
         targets: [],
         worldWidth: WORLD_W,
         worldHeight: WORLD_H,
+        onLanded: (_projectile, x, y) => {
+          // 落海：记录水花位置（收进画面内）
+          const splash = clampToBounds({ x, y }, BOUNDS);
+          markersRef.current.unshift({ x: splash.x, y: splash.y, born: timeRef.current, kind: "splash" });
+          if (markersRef.current.length > MARKER_COUNT) markersRef.current.length = MARKER_COUNT;
+        },
       });
       weaponRender.sync(projectilesRef.current);
       updateMarkers(markerPool, markersRef.current, timeRef.current);

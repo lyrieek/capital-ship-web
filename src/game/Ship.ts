@@ -2,7 +2,7 @@ import type { Ship, ShipConfig, ThreatItem } from "./ship.d";
 import { P, rand, clamp, angleDiff, approachAngle } from "./utils";
 import { getGameInstance } from "./Game";
 // 武器参数集中在 src/weapons
-import { getWeaponSpec } from "../weapons";
+import { getWeaponSpec, withinRange } from "../weapons";
 
 const CANNON = getWeaponSpec("shell");
 const TORPEDO = getWeaponSpec("torp");
@@ -91,13 +91,15 @@ export class ShipImpl implements Ship {
     return best;
   }
   findThreat() {
-    // 查找来袭威胁（最近的威胁性炮弹或鱼雷）
+    // 查找来袭威胁（只有鱼雷算威胁：炮弹速度慢、散布大，躲它没有意义）
     const game = getGameInstance();
     if (!game) return null;
     let best: ThreatItem | null = null;
     for (const p of game.projectiles) {
       // 跳过自身发射的弹药
       if (p.owner === this) continue;
+      // 只有鱼雷才需要规避
+      if (p.type !== "torp") continue;
 
       const rx = this.x - p.x,
         ry = this.y - p.y;
@@ -117,7 +119,7 @@ export class ShipImpl implements Ship {
         cy = ry + rvy * t;
       // 未击中距离
       const miss = Math.hypot(cx, cy);
-      // 危险半径按弹药类型取：鱼雷 48，炮弹 40
+      // 鱼雷危险半径
       const danger = getWeaponSpec(p.type).dangerRadius;
 
       if (miss < danger && (!best || t < best.t)) best = { t, p, miss };
@@ -229,9 +231,9 @@ export class ShipImpl implements Ship {
     if (e) {
       const rate = this.state === "normal" ? 1 : P.firePenalty;
 
-      // 主炮冷却和发射
+      // 主炮冷却和发射（超出射程不发射，等目标进入射程）
       this.gunCD -= dt * rate;
-      if (this.gunCD <= 0) {
+      if (this.gunCD <= 0 && withinRange(this, e, CANNON.range)) {
         this.gunCD = rand(CANNON.cooldownMin, CANNON.cooldownMax);
         const game = getGameInstance();
         if (game) {
@@ -242,7 +244,7 @@ export class ShipImpl implements Ship {
 
       // 鱼雷冷却和发射（低频齐射，一次 3~5 发）
       this.torpCD -= dt * rate;
-      if (this.torpCD <= 0) {
+      if (this.torpCD <= 0 && withinRange(this, e, TORPEDO.range)) {
         this.torpCD = rand(TORPEDO.cooldownMin, TORPEDO.cooldownMax);
         const game = getGameInstance();
         if (game) {

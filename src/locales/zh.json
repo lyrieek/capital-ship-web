@@ -31,7 +31,7 @@
   },
   "hud": {
     "title": "2D 海战 · 自动对战",
-    "weaponInfo": "主炮 10 伤害（曲射） · 鱼雷 30 伤害 ×3~5 · 规避转体 90°",
+    "weaponInfo": "主炮 10 伤害（曲射 · 射程 1100） · 鱼雷 30 伤害 ×3~5 · 规避转体 90°",
     "winnerRed": "红方胜利",
     "winnerBlue": "蓝方胜利",
     "winnerDraw": "同归于尽",
@@ -58,13 +58,17 @@
     "pause": "暂停",
     "resume": "继续",
     "timeScale": "时间缩放",
-    "textureSize": "贴图分辨率",
+    "wave": "波浪",
+    "waveHeight": "波高",
+    "specStrength": "高光强度",
+    "specPower": "高光锐度",
+    "light": "光照",
+    "lightAzimuth": "方位角",
+    "lightElevation": "高度角",
+    "mesh": "网格",
+    "meshSegments": "细分数",
     "showStats": "显示统计",
     "fps": "帧率",
-    "waveRows": "波纹行数",
-    "waveAmplitude": "波峰振幅",
-    "waveFrequency": "波数",
-    "waveSpeed": "波速",
     "reset": "重置"
   },
   "weapons": {
@@ -87,6 +91,7 @@
     "fired": "累计发射",
     "defaultSalvo": "默认齐射",
     "speed": "弹速",
+    "range": "射程",
     "damage": "伤害",
     "cooldown": "冷却"
   }

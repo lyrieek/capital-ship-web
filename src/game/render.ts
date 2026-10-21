@@ -87,8 +87,8 @@ function createWater() {
     kind: getOceanKind(),
     worldWidth: W,
     worldHeight: H,
-    textureWidth: 512,
-    textureHeight: 288,
+    segmentsX: 200,
+    segmentsY: 112,
     renderingGroupId: RG_WATER,
   });
 }

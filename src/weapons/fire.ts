@@ -52,6 +52,11 @@ export function muzzlePoint(from: Point, angle: number, offset: number): Point {
   return { x: from.x + Math.cos(angle) * offset, y: from.y + Math.sin(angle) * offset };
 }
 
+/** 目标是否在武器射程内 */
+export function withinRange(from: Point, target: Point, range: number): boolean {
+  return Math.hypot(target.x - from.x, target.y - from.y) <= range;
+}
+
 /** 把落点限制在世界边界内 */
 export function clampToBounds(point: Point, bounds?: WorldBounds): Point {
   if (!bounds) return point;
@@ -86,7 +91,8 @@ function createProjectile(spec: WeaponSpec, owner: ProjectileOwner, from: Point,
     vy: tangent.y / duration,
     r: spec.radius,
     dmg: spec.damage,
-    life: spec.life,
+    // 寿命由射程决定：弹药最多飞到射程边缘，不会一路飞到地图边界
+    life: spec.range / spec.speed,
     trail: [],
     arc: { curve, t: 0, duration },
   };
@@ -112,7 +118,8 @@ export function fireWeapon(id: WeaponId, owner: ProjectileOwner, from: Point, ai
   const target = clampToBounds(aim, params.bounds);
 
   for (let i = 0; i < count; i++) {
-    const aimPoint = scatterPoint(target, scatter, random, params.bounds);
+    // 齐射里的前几发是「精准弹」：直取瞄准点；其余的随机散布开
+    const aimPoint = i < spec.accurateCount ? target : scatterPoint(target, scatter, random, params.bounds);
     const angle = Math.atan2(aimPoint.y - from.y, aimPoint.x - from.x);
     const muzzle = muzzlePoint(from, angle, spec.muzzleOffset);
     projectiles.push(createProjectile(spec, owner, muzzle, aimPoint, bend, random));

@@ -14,8 +14,8 @@ export interface ProjectileUpdateOptions {
   worldHeight: number;
   /** 命中回调 */
   onHit?: (projectile: Projectile, target: ProjectileTarget, x: number, y: number) => void;
-  /** 弹药消失回调（命中 / 超时 / 出界） */
-  onExpire?: (projectile: Projectile) => void;
+  /** 落水回调：弹药耗尽射程或飞出战场（没有命中目标） */
+  onLanded?: (projectile: Projectile, x: number, y: number) => void;
 }
 
 /** 推进弹药位置：曲射弹药沿曲线走，飞出终点后沿切线继续直飞 */
@@ -65,9 +65,11 @@ export function updateProjectiles(dt: number, options: ProjectileUpdateOptions):
     projectile.trail.push(projectile.x, projectile.y);
     if (projectile.trail.length > 24) projectile.trail.splice(0, 2);
 
-    if (projectile.life <= 0 || projectile.x < -60 || projectile.x > worldWidth || projectile.y < -60 || projectile.y > worldHeight) {
+    // 飞出战场 = 落海；寿命耗尽 = 飞到射程边缘
+    const splashed = projectile.x < -60 || projectile.x > worldWidth || projectile.y < -60 || projectile.y > worldHeight;
+    if (projectile.life <= 0 || splashed) {
       projectile.dead = true;
-      options.onExpire?.(projectile);
+      options.onLanded?.(projectile, projectile.x, projectile.y);
       continue;
     }
 
