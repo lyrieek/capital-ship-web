@@ -5,6 +5,7 @@ import BattleCanvas from "./components/BattleCanvas";
 import TestHub from "./playground/TestHub";
 import TestExpanse from "./playground/TestExpanse";
 import TestWeapons from "./playground/TestWeapons";
+import TestShip from "./playground/TestShip";
 import "./App.css";
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
     { to: "/hub", label: "HUD 测试中心" },
     { to: "/expanse", label: t("expanse.title") },
     { to: "/weapons", label: t("weapons.title") },
+    { to: "/ship", label: t("ship.title") },
   ];
 
   return (
@@ -44,6 +46,7 @@ function App() {
           <Route path="/hub" element={<TestHub />} />
           <Route path="/expanse" element={<TestExpanse />} />
           <Route path="/weapons" element={<TestWeapons />} />
+          <Route path="/ship" element={<TestShip />} />
         </Routes>
       </main>
     </div>

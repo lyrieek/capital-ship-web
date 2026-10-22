@@ -1,4 +1,4 @@
-import type { Ship } from "./ship.d";
+import type { Ship } from "../ship/ship";
 // 弹药结构已抽离到 src/weapons（游戏层只引用，不重复定义）
 import type { Projectile } from "../weapons";
 
@@ -48,6 +48,8 @@ export interface GameState {
   over: boolean;
   // 获胜阵营：red-红方，blue-蓝方，null-平局
   winnerTeam: "red" | "blue" | null;
+  // 手动齐射剩余冷却时间（秒）
+  manualFireCD: number;
 
   // 重置游戏到初始状态
   reset(): void;
@@ -63,6 +65,12 @@ export interface GameState {
    * @param ship: 发射舰船, target: 目标舰船
    */
   fireTorpedo(ship: Ship, target: Ship): void;
+
+  /**
+   * 命令选中舰船向各自最近的敌舰齐射一次
+   * @param ships: 选中的舰船列表
+   */
+  focusFire(ships: readonly Ship[]): void;
 
   /**
    * 产生爆炸效果

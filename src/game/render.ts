@@ -7,8 +7,10 @@ import { createOceanSurface, getOceanKind, type OceanSurface } from "../expanse"
 // 弹药贴图与渲染已抽离到 src/weapons
 import { createWeaponRender, toCanvas2D, type WeaponRender } from "../weapons";
 import type { GameState, ParticleItem } from "./types";
-import type { Ship } from "./ship.d";
+import type { Ship } from "../ship/ship";
 import { H, W } from "./utils";
+import { bindOceanSelection, bindShipSelection, createSelectionRing, ShipSelection, type SelectionRing } from "./selection";
+import { issueSelectionSail } from "./movement";
 
 // 平面 Mesh 类型（避免为仅作类型的 Mesh 引入额外 import）
 type PlaneMesh = ReturnType<typeof MeshBuilder.CreatePlane>;
@@ -27,6 +29,12 @@ const SHIP_TEX_SCALE = 2;
 const HUD_W = 160;
 const HUD_H = 56;
 
+// Z 偏移：舰船贴图比海面更靠近相机，保证点击时优先选中舰船
+const SHIP_Z = -1;
+const HUD_Z = -2;
+// 选中圈贴在海面之上、舰船之下
+const RING_Z = -0.5;
+
 // 场景资源
 let engine: Engine | null = null;
 let scene: Scene | null = null;
@@ -37,6 +45,18 @@ let oceanSurface: OceanSurface | null = null;
 // 弹药渲染（贴图 / Mesh 池 / 弹道），具体实现在 src/weapons/render.ts
 let weaponRender: WeaponRender | null = null;
 
+// 当前对局的选择状态（主游戏 / playground 共用同一套选择逻辑）
+let shipSelection: ShipSelection | null = null;
+
+export function getShipSelection(): ShipSelection | null {
+  return shipSelection;
+}
+
+// 右键：让当前选中的舰船驶向落点
+function moveSelection(x: number, y: number): void {
+  if (shipSelection) issueSelectionSail(shipSelection.list, x, y);
+}
+
 // 每艘舰船对应的可视对象（reset 会重建舰船，故按对象身份做增删）
 interface ShipVisual {
   mesh: PlaneMesh;
@@ -45,6 +65,7 @@ interface ShipVisual {
   hud: PlaneMesh;
   hudMaterial: StandardMaterial;
   hudTexture: DynamicTexture;
+  ring: SelectionRing;
   lastHp: number;
   lastState: Ship["state"];
   lastAlive: boolean;
@@ -55,8 +76,8 @@ const shipVisuals = new Map<Ship, ShipVisual>();
 const particlePool: PlaneMesh[] = [];
 
 // 游戏像素坐标 -> 场景坐标（游戏原点在左上、y 向下；场景居中、y 向上）
-function worldToScene(x: number, y: number): Vector3 {
-  return new Vector3(x - W / 2, H / 2 - y, 0);
+function worldToScene(x: number, y: number, z = 0): Vector3 {
+  return new Vector3(x - W / 2, H / 2 - y, z);
 }
 // 通用的「自发光贴图」材质：忽略光照，颜色直接来自贴图，支持透明
 function makeSpriteMaterial(name: string, texture: DynamicTexture): StandardMaterial {
@@ -126,6 +147,13 @@ function createShipVisual(ship: Ship): ShipVisual {
   const hudMaterial = makeSpriteMaterial(`shipHudMaterial_${ship.name}`, shipHudTexture);
   hud.material = hudMaterial;
 
+  const ring = createSelectionRing(scene!, ship, RG_WATER);
+  ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y, RING_Z));
+
+  mesh.metadata = ship;
+  mesh.isPickable = true;
+  if (shipSelection) bindShipSelection(scene!, mesh, ship, shipSelection, { onMove: moveSelection });
+
   const visual: ShipVisual = {
     mesh,
     material,
@@ -133,6 +161,7 @@ function createShipVisual(ship: Ship): ShipVisual {
     hud,
     hudMaterial,
     hudTexture: shipHudTexture,
+    ring,
     lastHp: -1,
     lastState: "normal",
     lastAlive: true,
@@ -143,6 +172,9 @@ function createShipVisual(ship: Ship): ShipVisual {
 }
 
 function syncShips(game: GameState) {
+  // 死亡或重开后被替换的舰船不再保留在选择列表里
+  shipSelection?.retain(game.ships);
+
   const seen = new Set<Ship>();
   for (const ship of game.ships) {
     seen.add(ship);
@@ -155,15 +187,17 @@ function syncShips(game: GameState) {
     const alive = ship.alive;
     visual.mesh.setEnabled(alive);
     visual.hud.setEnabled(alive);
+    visual.ring.mesh.setEnabled(alive && (shipSelection?.has(ship) ?? false));
     if (!alive) continue;
 
-    visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
+    visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
     visual.mesh.rotation.z = -ship.angle;
+    visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y, RING_Z));
 
     const flash = 1 + ship.hitFlash * 0.9;
     visual.material.emissiveColor.set(flash, flash, flash);
 
-    visual.hud.position.copyFrom(worldToScene(ship.x, ship.y - (ship.wid / 2 + 20)));
+    visual.hud.position.copyFrom(worldToScene(ship.x, ship.y - (ship.wid / 2 + 20), HUD_Z));
 
     if (visual.lastHp !== ship.hp || visual.lastState !== ship.state || visual.lastAlive !== alive) {
       paintShipHud(toCanvas2D(visual.hudTexture), ship, HUD_W, HUD_H);
@@ -178,6 +212,7 @@ function syncShips(game: GameState) {
     if (seen.has(ship)) continue;
     visual.mesh.dispose();
     visual.hud.dispose();
+    visual.ring.dispose();
     visual.texture.dispose();
     visual.hudTexture.dispose();
     shipVisuals.delete(ship);
@@ -208,6 +243,7 @@ function syncParticles(particles: ParticleItem[]) {
 
 export function disposeRender() {
   shipVisuals.clear();
+  shipSelection = null;
   particlePool.length = 0;
   particleTexture = null;
   oceanSurface?.dispose();
@@ -238,7 +274,12 @@ export function initRender(canvas: HTMLCanvasElement): Engine {
   camera.maxZ = 1000;
   scene.activeCamera = camera;
 
+  const selection = new ShipSelection();
+  shipSelection = selection;
+
   createWater();
+  if (oceanSurface) bindOceanSelection(scene, oceanSurface.mesh, selection, { onMove: moveSelection });
+
   weaponRender = createWeaponRender({
     scene,
     worldWidth: W,

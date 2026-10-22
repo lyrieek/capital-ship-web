@@ -33,6 +33,14 @@ export interface GameConfig {
   yMax: number;
 }
 
+// 画布尺寸
+export const W = 1600;
+export const H = 900;
+export const TAU = Math.PI * 2;
+
+// 舰船与边界保持的间距
+const EDGE_MARGIN = 70;
+
 // 游戏参数配置
 export const P: GameConfig = {
   moveSpeed: 120,
@@ -44,14 +52,9 @@ export const P: GameConfig = {
   dodgeSideDist: 70,
   firePenalty: 0.5,
   minSep: 80,
-  yMin: 70,
-  yMax: 540,
+  yMin: EDGE_MARGIN,
+  yMax: H - EDGE_MARGIN,
 };
-
-// 画布尺寸
-export const W = 1600;
-export const H = 900;
-export const TAU = Math.PI * 2;
 
 // 生成[a,b)区间内的随机数
 export function rand(a: number, b: number): number {

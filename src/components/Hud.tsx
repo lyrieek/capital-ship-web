@@ -68,6 +68,7 @@ export default function Hud({ scene, gameOver, winnerTeam, onRestart }: HudProps
   const overlayRef = useRef<Rectangle | null>(null);
   const winnerRef = useRef<TextBlock | null>(null);
   const hintRef = useRef<TextBlock | null>(null);
+  const selectionHintRef = useRef<TextBlock | null>(null);
 
   useEffect(() => {
     if (!scene) return;
@@ -102,6 +103,10 @@ export default function Hud({ scene, gameOver, winnerTeam, onRestart }: HudProps
     root.addControl(hint);
     hintRef.current = hint;
 
+    const selectionHint = makeTextBlock("hudSelectionHint", "rgba(180,215,245,0.7)", "400", 13, "left", "bottom", 22, -18, "70%", 18);
+    root.addControl(selectionHint);
+    selectionHintRef.current = selectionHint;
+
     return () => {
       root.dispose();
       titleRef.current = null;
@@ -109,6 +114,7 @@ export default function Hud({ scene, gameOver, winnerTeam, onRestart }: HudProps
       overlayRef.current = null;
       winnerRef.current = null;
       hintRef.current = null;
+      selectionHintRef.current = null;
       rootRef.current = null;
     };
   }, [scene, onRestart]);
@@ -118,6 +124,7 @@ export default function Hud({ scene, gameOver, winnerTeam, onRestart }: HudProps
     if (!titleRef.current || !weaponRef.current) return;
     titleRef.current.text = t("hud.title");
     weaponRef.current.text = t("hud.weaponInfo");
+    if (selectionHintRef.current) selectionHintRef.current.text = t("hud.selectionHint");
   }, [t]);
 
   useEffect(() => {

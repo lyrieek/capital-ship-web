@@ -1,6 +1,12 @@
 // 弹药结构定义在 src/weapons
 import type { Projectile } from "../weapons";
 
+// 右键下达的航行目标（世界像素坐标）
+export interface SailOrder {
+  x: number;
+  y: number;
+}
+
 export interface ShipConfig {
   // X坐标
   x: number;
@@ -25,6 +31,8 @@ export interface ShipConfig {
 }
 
 export interface Ship extends ShipConfig {
+  // 当前航行指令；null 表示按原航线自动巡航
+  order: SailOrder | null;
   // 当前生命值
   hp: number;
   // 最大生命值

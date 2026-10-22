@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Scene } from "@babylonjs/core";
 import { getGameInstance, initializeGame, resetGame } from "../game/Game";
-import { disposeRender, initRender, renderGame } from "../game/render";
+import { disposeRender, getShipSelection, initRender, renderGame } from "../game/render";
+import { bindAttackKey } from "../game/selection";
 import Hud from "./Hud";
 
 // 2D 海战 Babylon.js 渲染容器（尺寸由 App.css 的 .map-section canvas 控制）
@@ -25,6 +26,15 @@ export default function BattleCanvas() {
     engine.resize();
     sceneRef.current = engine.scenes[0] ?? null;
     setSceneVersion((v) => v + 1);
+
+    // F 键：命令当前选中的舰船向最近敌舰齐射
+    const selection = getShipSelection();
+    if (sceneRef.current && selection) {
+      bindAttackKey(sceneRef.current, () => {
+        const game = getGameInstance();
+        if (game) game.focusFire(selection.list);
+      });
+    }
 
     let last = performance.now();
     engine.runRenderLoop(() => {
@@ -56,9 +66,14 @@ export default function BattleCanvas() {
     };
     canvas.addEventListener("click", handleClick);
 
+    // 屏蔽右键菜单，否则右键移动会弹出浏览器菜单
+    const preventContextMenu = (event: MouseEvent) => event.preventDefault();
+    canvas.addEventListener("contextmenu", preventContextMenu);
+
     return () => {
       window.removeEventListener("resize", handleResize);
       canvas.removeEventListener("click", handleClick);
+      canvas.removeEventListener("contextmenu", preventContextMenu);
       engine.stopRenderLoop();
       disposeRender();
       sceneRef.current = null;

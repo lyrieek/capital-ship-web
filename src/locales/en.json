@@ -32,6 +32,7 @@
   "hud": {
     "title": "2D Naval Battle · Auto Battle",
     "weaponInfo": "Main Gun 10 DMG (arc · range 1100) · Torpedo 30 DMG ×3-5 · Dodge Turn 90°",
+    "selectionHint": "Click to select · Shift multi-select · Right-click to move · F attacks nearest enemy (2.5s cooldown)",
     "winnerRed": "Red Victory",
     "winnerBlue": "Blue Victory",
     "winnerDraw": "Mutual Destruction",
@@ -70,6 +71,13 @@
     "showStats": "Show Stats",
     "fps": "FPS",
     "reset": "Reset"
+  },
+  "ship": {
+    "title": "Ship Debug",
+    "hint": "Click a ship to select it (hold Shift for multi-select), right-click to let the selection sail there, press F to attack.",
+    "clearSelection": "Clear selection",
+    "selected": "Selected ships",
+    "fps": "FPS"
   },
   "weapons": {
     "title": "Weapon Debug",

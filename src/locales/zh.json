@@ -32,6 +32,7 @@
   "hud": {
     "title": "2D 海战 · 自动对战",
     "weaponInfo": "主炮 10 伤害（曲射 · 射程 1100） · 鱼雷 30 伤害 ×3~5 · 规避转体 90°",
+    "selectionHint": "左键选择舰船 · Shift 多选 · 右键移动 · F 攻击最近敌舰（2.5 秒冷却）",
     "winnerRed": "红方胜利",
     "winnerBlue": "蓝方胜利",
     "winnerDraw": "同归于尽",
@@ -70,6 +71,13 @@
     "showStats": "显示统计",
     "fps": "帧率",
     "reset": "重置"
+  },
+  "ship": {
+    "title": "舰船测试",
+    "hint": "左键点击舰船进行选择（按住 Shift 可多选），右键让选中舰船转向航行过去，按 F 键攻击最近的敌舰。",
+    "clearSelection": "清除选择",
+    "selected": "选中舰船",
+    "fps": "帧率"
   },
   "weapons": {
     "title": "武器调试",

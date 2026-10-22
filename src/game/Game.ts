@@ -1,13 +1,18 @@
 // Game state singleton
 import type { GameState, ParticleItem } from "./types";
-import { ShipImpl } from "./ship";
-import type { Ship } from "./ship.d";
+import { ShipImpl } from "../ship/index";
+import type { Ship } from "../ship/ship";
 import { renderGame } from "./render";
-import { H, W, P } from "./utils";
+import { H, W, P, rand } from "./utils";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
-import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
+import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles, withinRange } from "../weapons";
 
 const TAU = Math.PI * 2;
+
+const SHELL = getWeaponSpec("shell");
+const TORPEDO = getWeaponSpec("torp");
+// 手动齐射（F 键）的公共冷却，避免连续按键无限输出
+const MANUAL_FIRE_COOLDOWN = 2.5;
 
 // 创建爆炸粒子的辅助函数
 function createParticles(x: number, y: number, n: number, color: string, particles: ParticleItem[]) {
@@ -50,6 +55,7 @@ export function initializeGame(): GameState {
     time: 0,
     over: false,
     winnerTeam: null,
+    manualFireCD: 0,
 
     reset() {
       this.projectiles.length = 0;
@@ -57,6 +63,7 @@ export function initializeGame(): GameState {
       this.time = 0;
       this.over = false;
       this.winnerTeam = null;
+      this.manualFireCD = 0;
 
       this.ships = [
         mkShip("red", "红-1", 200, 120, 1, 70, 400, "#ff7b6b", "#b8322a"),
@@ -87,6 +94,36 @@ export function initializeGame(): GameState {
       for (const projectile of projectiles) this.projectiles.push(projectile);
     },
 
+    focusFire(ships: readonly Ship[]) {
+      if (this.over || this.manualFireCD > 0) return;
+
+      let anyFired = false;
+      for (const ship of ships) {
+        if (!ship.alive) continue;
+        const target = ship.findTarget();
+        if (!target) continue;
+
+        let fired = false;
+        if (withinRange(ship, target, SHELL.range)) {
+          this.fireShell(ship, target);
+          ship.gunCD = rand(SHELL.cooldownMin, SHELL.cooldownMax);
+          fired = true;
+        }
+        if (withinRange(ship, target, TORPEDO.range)) {
+          this.fireTorpedo(ship, target);
+          ship.torpCD = rand(TORPEDO.cooldownMin, TORPEDO.cooldownMax);
+          fired = true;
+        }
+
+        if (fired) {
+          ship.recoil = 1;
+          anyFired = true;
+        }
+      }
+
+      if (anyFired) this.manualFireCD = MANUAL_FIRE_COOLDOWN;
+    },
+
     burst(x: number, y: number, n: number, color: string) {
       createParticles(x, y, n, color, this.particles);
     },
@@ -113,7 +150,7 @@ export function initializeGame(): GameState {
       }
       for (const s of alive) {
         s.x = Math.max(70, Math.min(s.maxX, s.x));
-        s.y = Math.max(70, Math.min(540, s.y));
+        s.y = Math.max(P.yMin, Math.min(P.yMax, s.y));
       }
     },
 
@@ -148,6 +185,7 @@ export function initializeGame(): GameState {
     },
 
     update(dt: number) {
+      this.manualFireCD = Math.max(0, this.manualFireCD - dt);
       if (!this.over) {
         this.time += dt;
         for (const s of this.ships) s.update(dt);

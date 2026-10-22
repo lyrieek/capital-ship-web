@@ -1,5 +1,5 @@
 // DynamicTexture 的矢量绘制：沿用原有 Canvas 2D 画法，只是绘制到贴图上下文上
-import type { Ship } from "./ship.d";
+import type { Ship } from "../ship/ship";
 
 // 海水（海浪）的绘制已抽离到 src/expanse/ocean.ts
 // 炮弹 / 鱼雷的绘制已抽离到 src/weapons/cannon.ts、src/weapons/torpedo.ts

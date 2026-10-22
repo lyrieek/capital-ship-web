@@ -1,6 +1,7 @@
-import type { Ship, ShipConfig, ThreatItem } from "./ship.d";
-import { P, rand, clamp, angleDiff, approachAngle } from "./utils";
-import { getGameInstance } from "./Game";
+import type { Ship, ShipConfig, SailOrder, ThreatItem } from "./ship";
+import { P, rand, clamp, angleDiff, approachAngle } from "../game/utils";
+import { updateSailOrder } from "../game/movement";
+import { getGameInstance } from "../game/Game";
 // 武器参数集中在 src/weapons
 import { getWeaponSpec, withinRange } from "../weapons";
 
@@ -22,6 +23,7 @@ export class ShipImpl implements Ship {
   name: string;
   team: "red" | "blue";
   baseY: number;
+  order: SailOrder | null;
 
   baseAngle: number;
   angle: number;
@@ -51,6 +53,7 @@ export class ShipImpl implements Ship {
     this.name = cfg.name;
     this.team = cfg.team;
     this.baseY = cfg.baseY;
+    this.order = null;
 
     this.baseAngle = this.dir > 0 ? 0 : Math.PI;
     this.angle = this.baseAngle;
@@ -161,69 +164,74 @@ export class ShipImpl implements Ship {
     this.recoil = Math.max(0, this.recoil - dt * 6);
     this.stateT += dt;
 
-    // 每帧可转动的角度
-    const rotStep = P.turnRate * dt;
+    // 有航行指令时，本帧由指令接管移动（转向 + 前进）；否则按原状态机巡航
+    if (!updateSailOrder(this, dt)) {
+      // 每帧可转动的角度
+      const rotStep = P.turnRate * dt;
 
-    if (this.state === "normal") {
-      // 正常状态：逐步转回基准角度，检测威胁
-      this.angle = approachAngle(this.angle, this.baseAngle, rotStep);
-      const th = this.findThreat();
-      if (th) this.startDodge(th);
-    } else if (this.state === "dodge") {
-      // 规避状态：转向90度角度并快速移动
-      const targetAngle = this.baseAngle + (this.dodgeSide * Math.PI) / 2;
-      this.angle = approachAngle(this.angle, targetAngle, rotStep);
+      if (this.state === "normal") {
+        // 正常状态：逐步转回基准角度，检测威胁
+        this.angle = approachAngle(this.angle, this.baseAngle, rotStep);
+        const th = this.findThreat();
+        if (th) this.startDodge(th);
+      } else if (this.state === "dodge") {
+        // 规避状态：转向90度角度并快速移动
+        const targetAngle = this.baseAngle + (this.dodgeSide * Math.PI) / 2;
+        this.angle = approachAngle(this.angle, targetAngle, rotStep);
 
-      this.y += this.dodgeSide * P.moveSpeed * P.dodgeFactor * dt;
-      this.y = clamp(this.y, P.yMin, P.yMax);
+        this.y += this.dodgeSide * P.moveSpeed * P.dodgeFactor * dt;
+        this.y = clamp(this.y, P.yMin, P.yMax);
 
-      this.dodgeT += dt;
-      if (this.dodgeT >= P.dodgeDuration) {
-        this.state = "recover";
-        this.stateT = 0;
+        this.dodgeT += dt;
+        if (this.dodgeT >= P.dodgeDuration) {
+          this.state = "recover";
+          this.stateT = 0;
+        }
+      } else if (this.state === "recover") {
+        // 回正状态：逐步转回基准角度并返回基准位置
+        this.angle = approachAngle(this.angle, this.baseAngle, rotStep);
+
+        const dy = this.baseY - this.y;
+        const step = P.moveSpeed * P.dodgeFactor * dt;
+        if (Math.abs(dy) <= step) this.y = this.baseY;
+        else this.y += Math.sign(dy) * step;
+
+        const angDone = Math.abs(angleDiff(this.angle, this.baseAngle)) < 0.02;
+        const posDone = Math.abs(this.y - this.baseY) < 0.5;
+        if (angDone && posDone && this.stateT > 0.35) {
+          this.state = "normal";
+          this.angle = this.baseAngle;
+          this.y = this.baseY;
+        }
       }
-    } else if (this.state === "recover") {
-      // 回正状态：逐步转回基准角度并返回基准位置
-      this.angle = approachAngle(this.angle, this.baseAngle, rotStep);
 
-      const dy = this.baseY - this.y;
-      const step = P.moveSpeed * P.dodgeFactor * dt;
-      if (Math.abs(dy) <= step) this.y = this.baseY;
-      else this.y += Math.sign(dy) * step;
+      // 计算水平速度（根据当前状态）
+      const speedFactor = this.state === "normal" ? P.normalFactor : P.dodgeFactor;
+      const hs = P.moveSpeed * speedFactor;
 
-      const angDone = Math.abs(angleDiff(this.angle, this.baseAngle)) < 0.02;
-      const posDone = Math.abs(this.y - this.baseY) < 0.5;
-      if (angDone && posDone && this.stateT > 0.35) {
-        this.state = "normal";
-        this.angle = this.baseAngle;
-        this.y = this.baseY;
+      // 更新水平位置并处理边界反弹
+      this.x += this.dir * hs * dt;
+      if (this.x < this.minX) {
+        this.x = this.minX;
+        this.dir = 1;
+        this.baseAngle = 0;
       }
-    }
+      if (this.x > this.maxX) {
+        this.x = this.maxX;
+        this.dir = -1;
+        this.baseAngle = Math.PI;
+      }
 
-    // 计算水平速度（根据当前状态）
-    const speedFactor = this.state === "normal" ? P.normalFactor : P.dodgeFactor;
-    const hs = P.moveSpeed * speedFactor;
-
-    // 更新水平位置并处理边界反弹
-    this.x += this.dir * hs * dt;
-    if (this.x < this.minX) {
-      this.x = this.minX;
-      this.dir = 1;
-    }
-    if (this.x > this.maxX) {
-      this.x = this.maxX;
-      this.dir = -1;
-    }
-
-    // 更新速度向量（用于预判）
-    this.vx = this.dir * hs;
-    if (this.state === "dodge") {
-      this.vy = this.dodgeSide * P.moveSpeed * P.dodgeFactor;
-    } else if (this.state === "recover") {
-      const dy = this.baseY - this.y;
-      this.vy = Math.abs(dy) > 1 ? Math.sign(dy) * P.moveSpeed * P.dodgeFactor : 0;
-    } else {
-      this.vy = 0;
+      // 更新速度向量（用于预判）
+      this.vx = this.dir * hs;
+      if (this.state === "dodge") {
+        this.vy = this.dodgeSide * P.moveSpeed * P.dodgeFactor;
+      } else if (this.state === "recover") {
+        const dy = this.baseY - this.y;
+        this.vy = Math.abs(dy) > 1 ? Math.sign(dy) * P.moveSpeed * P.dodgeFactor : 0;
+      } else {
+        this.vy = 0;
+      }
     }
 
     // 处理武器发射

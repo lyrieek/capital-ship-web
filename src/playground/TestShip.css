@@ -1,0 +1,9 @@
+/* TestShip specific styles */
+.playground-controls p {
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
+.playground-controls button {
+  margin-top: 1rem;
+}
