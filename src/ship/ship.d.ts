@@ -66,6 +66,8 @@ export interface Ship extends ShipConfig {
   hitFlash: number;
   // 后坐力效果
   recoil: number;
+  // 主炮当前瞄准角度（朝向目标，平滑转向）
+  aimAngle: number;
 
   // 是否存活（hp>0）
   get alive(): boolean;

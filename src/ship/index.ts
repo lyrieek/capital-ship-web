@@ -37,6 +37,7 @@ export class ShipImpl implements Ship {
   torpCD: number;
   hitFlash: number;
   recoil: number;
+  aimAngle: number;
 
   constructor(cfg: ShipConfig) {
     this.x = cfg.x;
@@ -70,6 +71,7 @@ export class ShipImpl implements Ship {
     this.torpCD = rand(TORPEDO.initialCooldownMin, TORPEDO.initialCooldownMax);
     this.hitFlash = 0;
     this.recoil = 0;
+    this.aimAngle = this.baseAngle;
   }
 
   get alive() {
@@ -237,6 +239,9 @@ export class ShipImpl implements Ship {
     // 处理武器发射
     const e = this.findTarget();
     if (e) {
+      const aim = Math.atan2(e.y - this.y, e.x - this.x);
+      this.aimAngle = approachAngle(this.aimAngle, aim, P.turnRate * dt);
+
       const rate = this.state === "normal" ? 1 : P.firePenalty;
 
       // 主炮冷却和发射（超出射程不发射，等目标进入射程）
@@ -259,6 +264,9 @@ export class ShipImpl implements Ship {
           game.fireTorpedo(this, e);
           this.recoil = 1;
         }
+      } else {
+        // 无目标时炮口慢慢转回航向
+        this.aimAngle = approachAngle(this.aimAngle, this.baseAngle, P.turnRate * dt * 0.5);
       }
     }
   }

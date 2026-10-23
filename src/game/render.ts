@@ -69,6 +69,7 @@ interface ShipVisual {
   lastHp: number;
   lastState: Ship["state"];
   lastAlive: boolean;
+  lastRecoil: number;
 }
 const shipVisuals = new Map<Ship, ShipVisual>();
 
@@ -165,6 +166,7 @@ function createShipVisual(ship: Ship): ShipVisual {
     lastHp: -1,
     lastState: "normal",
     lastAlive: true,
+    lastRecoil: -1,
   };
   paintShipHud(toCanvas2D(shipHudTexture), ship, HUD_W, HUD_H);
   shipHudTexture.update();
@@ -192,6 +194,10 @@ function syncShips(game: GameState) {
 
     visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
     visual.mesh.rotation.z = -ship.angle;
+
+    // 后坐力：开火时舰体沿反航向方向微向后踢
+    const kick = ship.recoil * 10;
+    visual.mesh.position.addInPlace(new Vector3(-Math.cos(ship.angle) * kick, -Math.sin(ship.angle) * kick, 0));
     visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y, RING_Z));
 
     const flash = 1 + ship.hitFlash * 0.9;
@@ -199,12 +205,15 @@ function syncShips(game: GameState) {
 
     visual.hud.position.copyFrom(worldToScene(ship.x, ship.y - (ship.wid / 2 + 20), HUD_Z));
 
-    if (visual.lastHp !== ship.hp || visual.lastState !== ship.state || visual.lastAlive !== alive) {
+    if (visual.lastHp !== ship.hp || visual.lastState !== ship.state || visual.lastAlive !== alive || visual.lastRecoil !== ship.recoil) {
+      paintShip(toCanvas2D(visual.texture), ship, SHIP_TEX_SCALE);
+      visual.texture.update();
       paintShipHud(toCanvas2D(visual.hudTexture), ship, HUD_W, HUD_H);
       visual.hudTexture.update();
       visual.lastHp = ship.hp;
       visual.lastState = ship.state;
       visual.lastAlive = alive;
+      visual.lastRecoil = ship.recoil;
     }
   }
 
