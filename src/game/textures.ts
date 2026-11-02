@@ -1,5 +1,5 @@
 // DynamicTexture 的矢量绘制：沿用原有 Canvas 2D 画法，只是绘制到贴图上下文上
-import type { Ship } from "../ship/ship";
+import { paintCannonTurret } from "../weapons";
 
 // 海水（海浪）的绘制已抽离到 src/expanse/ocean.ts
 // 炮弹 / 鱼雷的绘制已抽离到 src/weapons/cannon.ts、src/weapons/torpedo.ts
@@ -20,65 +20,7 @@ function paintCannon(
   dark: string,
   recoil: number,
 ): void {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-
-  // 后坐力：炮管向后缩
-  const kick = -recoil * 9;
-
-  // 炮座投影
-  ctx.beginPath();
-  ctx.arc(2, 2, radius, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,0,0,.42)";
-  ctx.fill();
-
-  // 炮座主体（金属渐变）
-  const grad = ctx.createLinearGradient(-radius, -radius, radius, radius);
-  grad.addColorStop(0, light);
-  grad.addColorStop(1, dark);
-  ctx.beginPath();
-  ctx.arc(0, 0, radius, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
-  ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,.55)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // 炮座高光
-  ctx.beginPath();
-  ctx.arc(-radius * 0.32, -radius * 0.32, radius * 0.28, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,.22)";
-  ctx.fill();
-
-  // 炮管
-  ctx.beginPath();
-  ctx.moveTo(kick, -radius * 0.5);
-  ctx.lineTo(kick + barrelLen, -radius * 0.5);
-  ctx.lineTo(kick + barrelLen, radius * 0.5);
-  ctx.lineTo(kick, radius * 0.5);
-  ctx.closePath();
-  ctx.fillStyle = dark;
-  ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,.45)";
-  ctx.stroke();
-
-  // 炮口
-  ctx.beginPath();
-  ctx.arc(kick + barrelLen, 0, radius * 0.5, 0, Math.PI * 2);
-  ctx.fillStyle = "#cfcfcf";
-  ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,.5)";
-  ctx.stroke();
-
-  // 炮口余焰
-  const flashAlpha = 0.25 + recoil * 0.35;
-  ctx.beginPath();
-  ctx.arc(kick + barrelLen - radius * 0.12, 0, radius * 0.36, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(255,218,130,${flashAlpha})`;
-  ctx.fill();
-
-  ctx.restore();
+  paintCannonTurret(ctx, x, y, angle, radius, barrelLen, light, dark, recoil);
 }
 
 export function paintShip(ctx: CanvasRenderingContext2D, ship: Ship, scale: number): void {

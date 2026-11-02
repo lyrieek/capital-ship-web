@@ -5,6 +5,7 @@ export * from "./trajectory";
 export * from "./fire";
 export * from "./update";
 export * from "./texture";
+export * from "./launcher";
 export * from "./cannon";
 export * from "./torpedo";
 export * from "./render";

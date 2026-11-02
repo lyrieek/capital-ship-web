@@ -1,5 +1,22 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { Camera, Color3, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, Scene, Vector3, type StandardMaterial } from "@babylonjs/core";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import {
+  Camera,
+  Color3,
+  Color4,
+  DynamicTexture,
+  Engine,
+  FreeCamera,
+  MeshBuilder,
+  Scene,
+  Vector3,
+  type StandardMaterial,
+} from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import {
   clampToBounds,
@@ -7,6 +24,7 @@ import {
   createWeaponRender,
   fireWeapon,
   getWeaponSpec,
+  paintLauncherPlatform,
   toCanvas2D,
   updateProjectiles,
   WEAPON_IDS,
@@ -86,27 +104,13 @@ interface WeaponsActions {
   onReset: () => void;
 }
 // 绘制调试用的发射平台
-function paintLauncher(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-  ctx.clearRect(0, 0, width, height);
-  // 船体
-  ctx.fillStyle = "#3d5a73";
-  ctx.beginPath();
-  ctx.moveTo(12, height * 0.35);
-  ctx.lineTo(width * 0.62, height * 0.22);
-  ctx.lineTo(width * 0.78, height * 0.5);
-  ctx.lineTo(width * 0.62, height * 0.78);
-  ctx.lineTo(12, height * 0.65);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,.45)";
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  // 炮塔与炮管
-  ctx.fillStyle = "#9fb6c9";
-  ctx.fillRect(width * 0.48, height * 0.4, width * 0.44, height * 0.2);
-  // 舱室
-  ctx.fillStyle = "rgba(255,255,255,.18)";
-  ctx.fillRect(width * 0.12, height * 0.42, width * 0.26, height * 0.16);
+function paintLauncher(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  weapon: WeaponId,
+): void {
+  paintLauncherPlatform(ctx, width, height, weapon);
 }
 
 // 落点标记颜色（贴图本身画成白色，用材质自发光染色）
@@ -114,7 +118,11 @@ const MARKER_SHOT_COLOR = "#ffd166";
 const MARKER_SPLASH_COLOR = "#7cc4ff";
 
 // 绘制落点标记
-function paintMarker(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+function paintMarker(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): void {
   ctx.clearRect(0, 0, width, height);
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 3;
@@ -130,7 +138,11 @@ function paintMarker(ctx: CanvasRenderingContext2D, width: number, height: numbe
 }
 
 // 绘制鼠标瞄准标记
-function paintAim(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+function paintAim(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): void {
   ctx.clearRect(0, 0, width, height);
   ctx.strokeStyle = "#7cc4ff";
   ctx.lineWidth = 2;
@@ -157,11 +169,20 @@ function createDebugCamera(scene: Scene): FreeCamera {
 }
 
 // 发射平台
-function createLauncherMesh(scene: Scene): PlaneMesh {
-  const texture = new DynamicTexture("launcherTexture", { width: 200, height: 100 }, scene, true);
-  paintLauncher(toCanvas2D(texture), 200, 100);
+function createLauncherMesh(scene: Scene, weapon: WeaponId): PlaneMesh {
+  const texture = new DynamicTexture(
+    "launcherTexture",
+    { width: 200, height: 100 },
+    scene,
+    true,
+  );
+  paintLauncher(toCanvas2D(texture), 200, 100, weapon);
   texture.update();
-  const mesh = MeshBuilder.CreatePlane("launcher", { width: 100, height: 50 }, scene);
+  const mesh = MeshBuilder.CreatePlane(
+    "launcher",
+    { width: 100, height: 50 },
+    scene,
+  );
   mesh.material = createSpriteMaterial("launcherMaterial", texture, scene);
   mesh.position.set(LAUNCHER.x - WORLD_W / 2, WORLD_H / 2 - LAUNCHER.y, 0);
   mesh.isPickable = false;
@@ -170,12 +191,21 @@ function createLauncherMesh(scene: Scene): PlaneMesh {
 
 // 落点标记池
 function createMarkerPool(scene: Scene): PlaneMesh[] {
-  const texture = new DynamicTexture("markerTexture", { width: 48, height: 48 }, scene, true);
+  const texture = new DynamicTexture(
+    "markerTexture",
+    { width: 48, height: 48 },
+    scene,
+    true,
+  );
   paintMarker(toCanvas2D(texture), 48, 48);
   texture.update();
   const pool: PlaneMesh[] = [];
   for (let i = 0; i < MARKER_COUNT; i++) {
-    const mesh = MeshBuilder.CreatePlane(`marker_${i}`, { width: 26, height: 26 }, scene);
+    const mesh = MeshBuilder.CreatePlane(
+      `marker_${i}`,
+      { width: 26, height: 26 },
+      scene,
+    );
     mesh.material = createSpriteMaterial(`markerMaterial_${i}`, texture, scene);
     mesh.isPickable = false;
     mesh.setEnabled(false);
@@ -186,7 +216,12 @@ function createMarkerPool(scene: Scene): PlaneMesh[] {
 
 // 鼠标瞄准标记
 function createAimMesh(scene: Scene): PlaneMesh {
-  const texture = new DynamicTexture("aimTexture", { width: 48, height: 48 }, scene, true);
+  const texture = new DynamicTexture(
+    "aimTexture",
+    { width: 48, height: 48 },
+    scene,
+    true,
+  );
   paintAim(toCanvas2D(texture), 48, 48);
   texture.update();
   const mesh = MeshBuilder.CreatePlane("aim", { width: 30, height: 30 }, scene);
@@ -197,7 +232,11 @@ function createAimMesh(scene: Scene): PlaneMesh {
 }
 
 // 更新落点标记的显示与淡出
-function updateMarkers(pool: PlaneMesh[], markers: ShotMarker[], now: number): void {
+function updateMarkers(
+  pool: PlaneMesh[],
+  markers: ShotMarker[],
+  now: number,
+): void {
   for (let i = 0; i < pool.length; i++) {
     const mesh = pool[i];
     const marker = markers[i];
@@ -213,9 +252,12 @@ function updateMarkers(pool: PlaneMesh[], markers: ShotMarker[], now: number): v
     mesh.setEnabled(true);
     mesh.position.set(marker.x - WORLD_W / 2, WORLD_H / 2 - marker.y, 0);
     const material = mesh.material as StandardMaterial;
-    material.emissiveColor = Color3.FromHexString(marker.kind === "splash" ? MARKER_SPLASH_COLOR : MARKER_SHOT_COLOR);
+    material.emissiveColor = Color3.FromHexString(
+      marker.kind === "splash" ? MARKER_SPLASH_COLOR : MARKER_SHOT_COLOR,
+    );
     // 落海水花会扩散变大，普通落点标记保持原样
-    const scale = marker.kind === "splash" ? 0.6 + (age / MARKER_LIFE) * 1.6 : 1;
+    const scale =
+      marker.kind === "splash" ? 0.6 + (age / MARKER_LIFE) * 1.6 : 1;
     mesh.scaling.setAll(scale);
     material.alpha = Math.max(0, 1 - age / MARKER_LIFE);
   }
@@ -268,24 +310,37 @@ function useWeaponsDebug(): WeaponsDebug {
   const [fired, setFired] = useState(0);
 
   // 向目标点开火：距离随机抖动，每发弹药的落点再各自随机散布
-  const fireAt = useCallback((target: { x: number; y: number }, distanceJitter = 0.18) => {
-    const from = { x: LAUNCHER.x, y: LAUNCHER.y };
-    const dx = target.x - from.x;
-    const dy = target.y - from.y;
-    const scale = 1 + (Math.random() * 2 - 1) * distanceJitter;
-    // 抖动后可能超出画面，目标点限制在边界内
-    const aim = clampToBounds({ x: from.x + dx * scale, y: from.y + dy * scale }, BOUNDS);
-    const id = weaponRef.current;
-    const projectiles = fireWeapon(id, OWNER, from, aim, {
-      salvo: salvoRef.current,
-      bend: id === "shell" ? bendRef.current : 0,
-      bounds: BOUNDS,
-    });
-    for (const projectile of projectiles) projectilesRef.current.push(projectile);
-    markersRef.current.unshift({ x: aim.x, y: aim.y, born: timeRef.current, kind: "shot" });
-    if (markersRef.current.length > MARKER_COUNT) markersRef.current.length = MARKER_COUNT;
-    setFired((count) => count + projectiles.length);
-  }, []);
+  const fireAt = useCallback(
+    (target: { x: number; y: number }, distanceJitter = 0.18) => {
+      const from = { x: LAUNCHER.x, y: LAUNCHER.y };
+      const dx = target.x - from.x;
+      const dy = target.y - from.y;
+      const scale = 1 + (Math.random() * 2 - 1) * distanceJitter;
+      // 抖动后可能超出画面，目标点限制在边界内
+      const aim = clampToBounds(
+        { x: from.x + dx * scale, y: from.y + dy * scale },
+        BOUNDS,
+      );
+      const id = weaponRef.current;
+      const projectiles = fireWeapon(id, OWNER, from, aim, {
+        salvo: salvoRef.current,
+        bend: id === "shell" ? bendRef.current : 0,
+        bounds: BOUNDS,
+      });
+      for (const projectile of projectiles)
+        projectilesRef.current.push(projectile);
+      markersRef.current.unshift({
+        x: aim.x,
+        y: aim.y,
+        born: timeRef.current,
+        kind: "shot",
+      });
+      if (markersRef.current.length > MARKER_COUNT)
+        markersRef.current.length = MARKER_COUNT;
+      setFired((count) => count + projectiles.length);
+    },
+    [],
+  );
 
   const changeWeapon = (next: WeaponId) => {
     weaponRef.current = next;
@@ -316,7 +371,13 @@ function useWeaponsDebug(): WeaponsDebug {
   const fireRandom = useCallback(() => {
     const angle = (Math.random() * 2 - 1) * (Math.PI / 3);
     const distance = 220 + Math.random() * 1100;
-    fireAt({ x: LAUNCHER.x + Math.cos(angle) * distance, y: LAUNCHER.y + Math.sin(angle) * distance }, 0.25);
+    fireAt(
+      {
+        x: LAUNCHER.x + Math.cos(angle) * distance,
+        y: LAUNCHER.y + Math.sin(angle) * distance,
+      },
+      0.25,
+    );
   }, [fireAt]);
 
   const clear = useCallback(() => {
@@ -341,7 +402,16 @@ function useWeaponsDebug(): WeaponsDebug {
     setLive(currentLive);
   }, []);
 
-  const state: WeaponsState = { weapon, salvo, bend, showPath, showTrail, fps, live, fired };
+  const state: WeaponsState = {
+    weapon,
+    salvo,
+    bend,
+    showPath,
+    showTrail,
+    fps,
+    live,
+    fired,
+  };
   const actions: WeaponsActions = {
     onWeaponChange: changeWeapon,
     onSalvoChange: changeSalvo,
@@ -353,11 +423,26 @@ function useWeaponsDebug(): WeaponsDebug {
     onReset: reset,
   };
 
-  return { state, actions, onStats, renderRef, projectilesRef, markersRef, timeRef, fireAt };
+  return {
+    state,
+    actions,
+    onStats,
+    renderRef,
+    projectilesRef,
+    markersRef,
+    timeRef,
+    fireAt,
+  };
 }
 
 // 左侧 HTML 控件面板：选武器、设定齐射数量与弯曲度、开关弹道/尾迹
-function WeaponsControls({ state, actions }: { state: WeaponsState; actions: WeaponsActions }) {
+function WeaponsControls({
+  state,
+  actions,
+}: {
+  state: WeaponsState;
+  actions: WeaponsActions;
+}) {
   const { t } = useTranslation();
   const spec = getWeaponSpec(state.weapon);
 
@@ -370,7 +455,12 @@ function WeaponsControls({ state, actions }: { state: WeaponsState; actions: Wea
           const label = t(`weapons.${id}`);
           return (
             <label key={id}>
-              <input type="radio" name="weapon" checked={state.weapon === id} onChange={() => actions.onWeaponChange(id)} />
+              <input
+                type="radio"
+                name="weapon"
+                checked={state.weapon === id}
+                onChange={() => actions.onWeaponChange(id)}
+              />
               {label}
             </label>
           );
@@ -390,15 +480,30 @@ function WeaponsControls({ state, actions }: { state: WeaponsState; actions: Wea
         </label>
         <label className="playground-field">
           <span>{t("weapons.bend")}</span>
-          <input type="range" min={0} max={0.3} step={0.01} value={state.bend} onChange={(e) => actions.onBendChange(Number(e.target.value))} />
+          <input
+            type="range"
+            min={0}
+            max={0.3}
+            step={0.01}
+            value={state.bend}
+            onChange={(e) => actions.onBendChange(Number(e.target.value))}
+          />
           <span className="playground-value">{state.bend.toFixed(2)}</span>
         </label>
         <label>
-          <input type="checkbox" checked={state.showPath} onChange={(e) => actions.onPathToggle(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={state.showPath}
+            onChange={(e) => actions.onPathToggle(e.target.checked)}
+          />
           {t("weapons.showPath")}
         </label>
         <label>
-          <input type="checkbox" checked={state.showTrail} onChange={(e) => actions.onTrailToggle(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={state.showTrail}
+            onChange={(e) => actions.onTrailToggle(e.target.checked)}
+          />
           {t("weapons.showTrail")}
         </label>
         <button type="button" onClick={actions.onFireRandom}>
@@ -442,18 +547,35 @@ function WeaponsControls({ state, actions }: { state: WeaponsState; actions: Wea
 // 便于不启动整局对战就单独调试炮弹曲射、鱼雷齐射等表现。
 export default function TestWeapons() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { state, actions, onStats, renderRef, projectilesRef, markersRef, timeRef, fireAt } = useWeaponsDebug();
+  const {
+    state,
+    actions,
+    onStats,
+    renderRef,
+    projectilesRef,
+    markersRef,
+    timeRef,
+    fireAt,
+  } = useWeaponsDebug();
+  const launcherRef = useRef<PlaneMesh | null>(null);
+  const sceneRef = useRef<Scene | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true }, true);
+    const engine = new Engine(
+      canvas,
+      true,
+      { preserveDrawingBuffer: true, stencil: true },
+      true,
+    );
     const thisScene = new Scene(engine);
+    sceneRef.current = thisScene;
     thisScene.clearColor = new Color4(0.03, 0.09, 0.14, 1);
     thisScene.activeCamera = createDebugCamera(thisScene);
 
-    createLauncherMesh(thisScene);
+    launcherRef.current = createLauncherMesh(thisScene, state.weapon);
     const markerPool = createMarkerPool(thisScene);
     const aimMesh = createAimMesh(thisScene);
 
@@ -486,8 +608,14 @@ export default function TestWeapons() {
         onLanded: (_projectile, x, y) => {
           // 落海：记录水花位置（收进画面内）
           const splash = clampToBounds({ x, y }, BOUNDS);
-          markersRef.current.unshift({ x: splash.x, y: splash.y, born: timeRef.current, kind: "splash" });
-          if (markersRef.current.length > MARKER_COUNT) markersRef.current.length = MARKER_COUNT;
+          markersRef.current.unshift({
+            x: splash.x,
+            y: splash.y,
+            born: timeRef.current,
+            kind: "splash",
+          });
+          if (markersRef.current.length > MARKER_COUNT)
+            markersRef.current.length = MARKER_COUNT;
         },
       });
       weaponRender.sync(projectilesRef.current);
@@ -538,17 +666,38 @@ export default function TestWeapons() {
       canvas.removeEventListener("mouseleave", handleLeave);
       engine.stopRenderLoop();
       weaponRender.dispose();
+      launcherRef.current?.dispose();
+      launcherRef.current = null;
+      sceneRef.current = null;
       renderRef.current = null;
       engine.dispose();
     };
   }, [fireAt, onStats, projectilesRef, markersRef, timeRef, renderRef]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    launcherRef.current?.dispose();
+    launcherRef.current = createLauncherMesh(scene, state.weapon);
+  }, [state.weapon]);
+
+  useEffect(() => {
+    // 场景已在上一个 effect 创建，这里简单重建 launcher
+    // 为了简化，直接在下一次渲染前替换：由于 useEffect 顺序，这里获取不到场景
+    // 改为通过 ref 存储
+  }, [state.weapon]);
 
   return (
     <div className="playground">
       <div className="playground-body">
         <WeaponsControls state={state} actions={actions} />
         <section className="playground-preview">
-          <canvas ref={canvasRef} className="playground-canvas" width={WORLD_W} height={WORLD_H} />
+          <canvas
+            ref={canvasRef}
+            className="playground-canvas"
+            width={WORLD_W}
+            height={WORLD_H}
+          />
         </section>
       </div>
     </div>
