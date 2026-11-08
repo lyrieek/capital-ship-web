@@ -6,29 +6,6 @@
   "language": "语言",
   "english": "英语",
   "chinese": "中文",
-  "terrain": {
-    "water": "深水区",
-    "shallow_water": "浅水区",
-    "deep_water": "深水区",
-    "forest": "森林",
-    "plantsrocks": "植物与岩石"
-  },
-  "entity_types": {
-    "ship": "舰艇",
-    "building": "建筑"
-  },
-  "ship_stats": {
-    "name": "名称",
-    "type": "类型",
-    "hp": "生命值",
-    "attack": "攻击力",
-    "range": "射程"
-  },
-  "building_stats": {
-    "sprites": "精灵数量",
-    "type": "类型",
-    "radius": "碰撞半径"
-  },
   "hud": {
     "title": "2D 海战 · 自动对战",
     "weaponInfo": "主炮 10 伤害（曲射 · 射程 1100） · 鱼雷 30 伤害 ×3~5 · 规避转体 90°",
@@ -40,8 +17,6 @@
   },
   "playground": {
     "controls": "控制面板",
-    "titleLabel": "标题",
-    "weaponLabel": "武器信息",
     "gameOver": "游戏结束",
     "winner": "获胜方",
     "winnerNone": "无",

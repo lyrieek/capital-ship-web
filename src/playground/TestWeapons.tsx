@@ -6,32 +6,26 @@ import {
   type RefObject,
 } from "react";
 import {
-  Camera,
   Color3,
-  Color4,
   DynamicTexture,
-  Engine,
-  FreeCamera,
-  MeshBuilder,
-  Scene,
-  Vector3,
+  type Scene,
+  type Mesh,
   type StandardMaterial,
 } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import {
   clampToBounds,
-  createSpriteMaterial,
   createWeaponRender,
   fireWeapon,
   getWeaponSpec,
   paintLauncherPlatform,
-  toCanvas2D,
   updateProjectiles,
   WEAPON_IDS,
   type Projectile,
   type WeaponId,
   type WeaponRender,
 } from "../weapons";
+import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
 import "./playground.css";
 import "./TestWeapons.css";
 
@@ -53,7 +47,7 @@ const SALVO_MAX = 50;
 // 落点允许的范围：随机目标与散布都不会跑出画面
 const BOUNDS = { width: WORLD_W, height: WORLD_H, margin: 40 };
 
-type PlaneMesh = ReturnType<typeof MeshBuilder.CreatePlane>;
+type PlaneMesh = Mesh;
 
 /** 一次射击的落点标记 */
 interface ShotMarker {
@@ -154,22 +148,8 @@ function paintAim(
   ctx.stroke();
 }
 
-// 正交俯视相机
-function createDebugCamera(scene: Scene): FreeCamera {
-  const camera = new FreeCamera("camera", new Vector3(0, 0, -100), scene);
-  camera.setTarget(Vector3.Zero());
-  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-  camera.orthoLeft = -WORLD_W / 2;
-  camera.orthoRight = WORLD_W / 2;
-  camera.orthoTop = WORLD_H / 2;
-  camera.orthoBottom = -WORLD_H / 2;
-  camera.minZ = 0.1;
-  camera.maxZ = 1000;
-  return camera;
-}
-
 // 发射平台
-function createLauncherMesh(scene: Scene, weapon: WeaponId): PlaneMesh {
+function createLauncherMesh(scene: Scene, weapon: WeaponId): ReturnType<typeof createPlane> {
   const texture = new DynamicTexture(
     "launcherTexture",
     { width: 200, height: 100 },
@@ -178,13 +158,9 @@ function createLauncherMesh(scene: Scene, weapon: WeaponId): PlaneMesh {
   );
   paintLauncher(toCanvas2D(texture), 200, 100, weapon);
   texture.update();
-  const mesh = MeshBuilder.CreatePlane(
-    "launcher",
-    { width: 100, height: 50 },
-    scene,
-  );
+  const mesh = createPlane("launcher", 100, 50, scene);
   mesh.material = createSpriteMaterial("launcherMaterial", texture, scene);
-  mesh.position.set(LAUNCHER.x - WORLD_W / 2, WORLD_H / 2 - LAUNCHER.y, 0);
+  mesh.position.copyFrom(worldToScene(LAUNCHER.x, LAUNCHER.y));
   mesh.isPickable = false;
   return mesh;
 }
@@ -201,11 +177,7 @@ function createMarkerPool(scene: Scene): PlaneMesh[] {
   texture.update();
   const pool: PlaneMesh[] = [];
   for (let i = 0; i < MARKER_COUNT; i++) {
-    const mesh = MeshBuilder.CreatePlane(
-      `marker_${i}`,
-      { width: 26, height: 26 },
-      scene,
-    );
+    const mesh = createPlane(`marker_${i}`, 26, 26, scene);
     mesh.material = createSpriteMaterial(`markerMaterial_${i}`, texture, scene);
     mesh.isPickable = false;
     mesh.setEnabled(false);
@@ -215,7 +187,7 @@ function createMarkerPool(scene: Scene): PlaneMesh[] {
 }
 
 // 鼠标瞄准标记
-function createAimMesh(scene: Scene): PlaneMesh {
+function createAimMesh(scene: Scene): ReturnType<typeof createPlane> {
   const texture = new DynamicTexture(
     "aimTexture",
     { width: 48, height: 48 },
@@ -224,7 +196,7 @@ function createAimMesh(scene: Scene): PlaneMesh {
   );
   paintAim(toCanvas2D(texture), 48, 48);
   texture.update();
-  const mesh = MeshBuilder.CreatePlane("aim", { width: 30, height: 30 }, scene);
+  const mesh = createPlane("aim", 30, 30, scene);
   mesh.material = createSpriteMaterial("aimMaterial", texture, scene);
   mesh.isPickable = false;
   mesh.setEnabled(false);
@@ -250,7 +222,7 @@ function updateMarkers(
       continue;
     }
     mesh.setEnabled(true);
-    mesh.position.set(marker.x - WORLD_W / 2, WORLD_H / 2 - marker.y, 0);
+    mesh.position.copyFrom(worldToScene(marker.x, marker.y));
     const material = mesh.material as StandardMaterial;
     material.emissiveColor = Color3.FromHexString(
       marker.kind === "splash" ? MARKER_SPLASH_COLOR : MARKER_SHOT_COLOR,
@@ -564,16 +536,14 @@ export default function TestWeapons() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const engine = new Engine(
+    const babylon = createBabylonScene({
       canvas,
-      true,
-      { preserveDrawingBuffer: true, stencil: true },
-      true,
-    );
-    const thisScene = new Scene(engine);
+      clearColor: [0.03, 0.09, 0.14, 1],
+      width: WORLD_W,
+      height: WORLD_H,
+    });
+    const thisScene = babylon.scene;
     sceneRef.current = thisScene;
-    thisScene.clearColor = new Color4(0.03, 0.09, 0.14, 1);
-    thisScene.activeCamera = createDebugCamera(thisScene);
 
     launcherRef.current = createLauncherMesh(thisScene, state.weapon);
     const markerPool = createMarkerPool(thisScene);
@@ -589,12 +559,9 @@ export default function TestWeapons() {
     });
     renderRef.current = weaponRender;
 
-    // 等布局确定后再 resize，避免 canvas 尺寸为 0
-    engine.resize();
-
     let last = performance.now();
     let frames = 0;
-    engine.runRenderLoop(() => {
+    babylon.engine.runRenderLoop(() => {
       const now = performance.now();
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
@@ -625,7 +592,7 @@ export default function TestWeapons() {
       frames += 1;
       // 帧率统计限流，避免每帧触发 React 重渲染
       if (frames % 15 === 0) {
-        onStats(Math.round(engine.getFps()), projectilesRef.current.length);
+        onStats(Math.round(babylon.engine.getFps()), projectilesRef.current.length);
       }
     });
 
@@ -656,7 +623,7 @@ export default function TestWeapons() {
     canvas.addEventListener("mousemove", handleMove);
     canvas.addEventListener("mouseleave", handleLeave);
 
-    const observer = new ResizeObserver(() => engine.resize());
+    const observer = new ResizeObserver(() => babylon.engine.resize());
     observer.observe(canvas);
 
     return () => {
@@ -664,13 +631,12 @@ export default function TestWeapons() {
       canvas.removeEventListener("click", handleClick);
       canvas.removeEventListener("mousemove", handleMove);
       canvas.removeEventListener("mouseleave", handleLeave);
-      engine.stopRenderLoop();
+      babylon.dispose();
       weaponRender.dispose();
       launcherRef.current?.dispose();
       launcherRef.current = null;
       sceneRef.current = null;
       renderRef.current = null;
-      engine.dispose();
     };
   }, [fireAt, onStats, projectilesRef, markersRef, timeRef, renderRef]);
 
@@ -679,12 +645,6 @@ export default function TestWeapons() {
     if (!scene) return;
     launcherRef.current?.dispose();
     launcherRef.current = createLauncherMesh(scene, state.weapon);
-  }, [state.weapon]);
-
-  useEffect(() => {
-    // 场景已在上一个 effect 创建，这里简单重建 launcher
-    // 为了简化，直接在下一次渲染前替换：由于 useEffect 顺序，这里获取不到场景
-    // 改为通过 ref 存储
   }, [state.weapon]);
 
   return (

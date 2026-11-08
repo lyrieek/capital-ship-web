@@ -1,7 +1,7 @@
 // 舰船选择、选中圈与手动攻击：主游戏和 playground 共用
-import { ActionManager, DynamicTexture, ExecuteCodeAction, KeyboardEventTypes, MeshBuilder, type Mesh, type Scene } from "@babylonjs/core";
+import { ActionManager, DynamicTexture, ExecuteCodeAction, KeyboardEventTypes, type Mesh, type Scene } from "@babylonjs/core";
 import type { Ship } from "../ship/ship";
-import { createSpriteMaterial, toCanvas2D } from "../weapons";
+import { createSpriteMaterial, createPlane, toCanvas2D } from "../babylon";
 import { H, W } from "./utils";
 
 const RING_TEX_WIDTH = 240;
@@ -107,8 +107,7 @@ export function createSelectionRing(scene: Scene, ship: Ship, renderingGroupId: 
   paintSelectionRing(toCanvas2D(texture), RING_TEX_WIDTH, RING_TEX_HEIGHT);
   texture.update();
 
-  const mesh = MeshBuilder.CreatePlane(`shipRing_${ship.name}`, { width: ship.len * 1.3, height: ship.wid * 2 }, scene);
-  mesh.renderingGroupId = renderingGroupId;
+  const mesh = createPlane(`shipRing_${ship.name}`, ship.len * 1.3, ship.wid * 2, scene, renderingGroupId);
   mesh.isPickable = false;
 
   const material = createSpriteMaterial(`shipRingMaterial_${ship.name}`, texture, scene);

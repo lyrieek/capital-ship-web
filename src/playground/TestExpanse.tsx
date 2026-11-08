@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { Camera, Color4, Engine, FreeCamera, Scene, Vector3 } from "@babylonjs/core";
+import type { Engine } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
+import { createBabylonScene } from "../babylon";
 import { createOceanSurface, DEFAULT_LIGHT_AZIMUTH, DEFAULT_LIGHT_ELEVATION, OCEAN_PRESETS, type OceanKind, type OceanSurface } from "../expanse";
 import "./playground.css";
 import "./TestExpanse.css";
@@ -78,18 +79,13 @@ function createOceanScene(
   timeRef: RefObject<number>,
   onFps: (fps: number) => void,
 ): OceanScene {
-  const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true }, true);
-  const scene = new Scene(engine);
-  scene.clearColor = new Color4(0.02, 0.06, 0.1, 1);
-
-  const camera = new FreeCamera("camera", new Vector3(0, 0, -100), scene);
-  camera.setTarget(Vector3.Zero());
-  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-  camera.orthoLeft = -800;
-  camera.orthoRight = 800;
-  camera.orthoTop = 450;
-  camera.orthoBottom = -450;
-  scene.activeCamera = camera;
+  const babylon = createBabylonScene({
+    canvas,
+    clearColor: [0.02, 0.06, 0.1, 1],
+    width: 1600,
+    height: 900,
+  });
+  const scene = babylon.scene;
 
   const surface = createOceanSurface({
     scene,
@@ -101,12 +97,9 @@ function createOceanScene(
   });
   applyLook(surface, look);
 
-  // 等布局确定后再 resize，避免 canvas 尺寸为 0
-  engine.resize();
-
   let last = performance.now();
   let frames = 0;
-  engine.runRenderLoop(() => {
+  babylon.engine.runRenderLoop(() => {
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
@@ -115,20 +108,18 @@ function createOceanScene(
     scene.render();
     frames += 1;
     // 帧率统计限流，避免每帧触发 React 重渲染
-    if (frames % 15 === 0) onFps(Math.round(engine.getFps()));
+    if (frames % 15 === 0) onFps(Math.round(babylon.engine.getFps()));
   });
 
-  const observer = new ResizeObserver(() => engine.resize());
+  const observer = new ResizeObserver(() => babylon.engine.resize());
   observer.observe(canvas);
 
   return {
-    engine,
+    engine: babylon.engine,
     surface,
     dispose() {
-      observer.disconnect();
-      engine.stopRenderLoop();
+      babylon.dispose();
       surface.dispose();
-      engine.dispose();
     },
   };
 }

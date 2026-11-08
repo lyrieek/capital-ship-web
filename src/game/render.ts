@@ -1,19 +1,19 @@
 // Babylon.js 渲染层：把 2D 海战状态同步到「正交俯视」场景
 // 相机固定在 -Z 方向俯视 XY 平面，世界单位与游戏像素坐标一一对应。
 // 后续还需优化 舰船/炮弹/粒子改为共享图集的 InstancedMesh/thin instance
-import { Camera, Color3, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Color3, DynamicTexture, Vector3, type Engine, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
 import { paintParticle, paintShip, paintShipHud } from "./textures";
 import { createOceanSurface, getOceanKind, type OceanSurface } from "../expanse";
-// 弹药贴图与渲染已抽离到 src/weapons
-import { createWeaponRender, toCanvas2D, type WeaponRender } from "../weapons";
+import { createWeaponRender, type WeaponRender } from "../weapons";
 import type { GameState, ParticleItem } from "./types";
 import type { Ship } from "../ship/ship";
 import { H, W } from "./utils";
 import { bindOceanSelection, bindShipSelection, createSelectionRing, ShipSelection, type SelectionRing } from "./selection";
 import { issueSelectionSail } from "./movement";
+import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
 
 // 平面 Mesh 类型（避免为仅作类型的 Mesh 引入额外 import）
-type PlaneMesh = ReturnType<typeof MeshBuilder.CreatePlane>;
+type PlaneMesh = Mesh;
 
 // 渲染分组（Babylon 最多 4 组 0..3），组间自动清深度，按组顺序层叠；
 // 不能依赖 Z 距离排序：正交相机下远处水面到相机的距离反而更近，会盖住舰船。
@@ -76,33 +76,6 @@ const shipVisuals = new Map<Ship, ShipVisual>();
 // 粒子使用对象池复用 Mesh，避免频繁创建销毁
 const particlePool: PlaneMesh[] = [];
 
-// 游戏像素坐标 -> 场景坐标（游戏原点在左上、y 向下；场景居中、y 向上）
-function worldToScene(x: number, y: number, z = 0): Vector3 {
-  return new Vector3(x - W / 2, H / 2 - y, z);
-}
-// 通用的「自发光贴图」材质：忽略光照，颜色直接来自贴图，支持透明
-function makeSpriteMaterial(name: string, texture: DynamicTexture): StandardMaterial {
-  // DynamicTexture.hasAlpha 默认 false，必须显式开启，否则透明区域会被当成不透明（整屏 HUD 会变黑）
-  texture.hasAlpha = true;
-  const material = new StandardMaterial(name, scene!);
-  material.diffuseTexture = texture;
-  material.emissiveTexture = texture;
-  material.emissiveColor = Color3.White();
-  material.diffuseColor = Color3.Black();
-  material.specularColor = Color3.Black();
-  material.disableLighting = true;
-  material.backFaceCulling = false;
-  material.useAlphaFromDiffuseTexture = true;
-  material.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
-  return material;
-}
-// 创建指定渲染分组的平面（分组决定层叠顺序）
-function createLayerPlane(name: string, width: number, height: number, group: number): PlaneMesh {
-  const mesh = MeshBuilder.CreatePlane(name, { width, height }, scene!);
-  mesh.renderingGroupId = group;
-  mesh.isPickable = false;
-  return mesh;
-}
 function createWater() {
   oceanSurface = createOceanSurface({
     scene: scene!,
@@ -139,13 +112,13 @@ function createShipVisual(ship: Ship): ShipVisual {
   paintShip(toCanvas2D(texture), ship, SHIP_TEX_SCALE);
   texture.update();
 
-  const mesh = createLayerPlane(`ship_${ship.name}`, ship.len, ship.wid, RG_SHIP);
-  const material = makeSpriteMaterial(`shipMaterial_${ship.name}`, texture);
+  const mesh = createPlane(`ship_${ship.name}`, ship.len, ship.wid, scene!, RG_SHIP);
+  const material = createSpriteMaterial(`shipMaterial_${ship.name}`, texture, scene!);
   mesh.material = material;
 
   const shipHudTexture = new DynamicTexture(`shipHudTexture_${ship.name}`, { width: HUD_W, height: HUD_H }, scene!, true);
-  const hud = createLayerPlane(`shipHud_${ship.name}`, HUD_W, HUD_H, RG_OVERLAY);
-  const hudMaterial = makeSpriteMaterial(`shipHudMaterial_${ship.name}`, shipHudTexture);
+  const hud = createPlane(`shipHud_${ship.name}`, HUD_W, HUD_H, scene!, RG_OVERLAY);
+  const hudMaterial = createSpriteMaterial(`shipHudMaterial_${ship.name}`, shipHudTexture, scene!);
   hud.material = hudMaterial;
 
   const ring = createSelectionRing(scene!, ship, RG_WATER);
@@ -229,8 +202,8 @@ function syncShips(game: GameState) {
 }
 
 function createParticleMesh(index: number): PlaneMesh {
-  const mesh = createLayerPlane(`particle_${index}`, 1, 1, RG_FX);
-  mesh.material = makeSpriteMaterial(`particleMaterial_${index}`, particleTexture!);
+  const mesh = createPlane(`particle_${index}`, 1, 1, scene!, RG_FX);
+  mesh.material = createSpriteMaterial(`particleMaterial_${index}`, particleTexture!, scene!);
   return mesh;
 }
 
@@ -268,20 +241,14 @@ export function disposeRender() {
 
 export function initRender(canvas: HTMLCanvasElement): Engine {
   disposeRender();
-  engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true }, true);
-  scene = new Scene(engine);
-  scene.clearColor = new Color4(0.04, 0.17, 0.27, 1);
-
-  const camera = new FreeCamera("camera", new Vector3(0, 0, -100), scene);
-  camera.setTarget(Vector3.Zero());
-  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-  camera.orthoLeft = -W / 2;
-  camera.orthoRight = W / 2;
-  camera.orthoTop = H / 2;
-  camera.orthoBottom = -H / 2;
-  camera.minZ = 0.1;
-  camera.maxZ = 1000;
-  scene.activeCamera = camera;
+  const babylon = createBabylonScene({
+    canvas,
+    clearColor: [0.04, 0.17, 0.27, 1],
+    width: W,
+    height: H,
+  });
+  engine = babylon.engine;
+  scene = babylon.scene;
 
   const selection = new ShipSelection();
   shipSelection = selection;

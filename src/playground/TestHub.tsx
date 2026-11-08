@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Engine, Color4, Vector3, FreeCamera, Camera, Scene } from "@babylonjs/core";
+import type { Engine, Scene } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import Hud from "../components/Hud";
+import { createBabylonScene } from "../babylon";
 import "./playground.css";
 
 // HUD 测试中心：仅渲染 HUD 组件本身，配合 input/checkbox 改变状态，
@@ -10,7 +11,6 @@ export default function TestHub() {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
-  //   const sceneRef = useRef<Scene | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
   const [sceneVersion, setSceneVersion] = useState(0);
   const [gameOver, setGameOver] = useState(false);
@@ -20,39 +20,25 @@ export default function TestHub() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true }, true);
-    engineRef.current = engine;
-    const thisScene = new Scene(engine);
-    thisScene.clearColor = new Color4(0.04, 0.17, 0.27, 1);
-
-    const camera = new FreeCamera("camera", new Vector3(0, 0, -100), thisScene);
-    camera.setTarget(Vector3.Zero());
-    camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-    camera.orthoLeft = -800;
-    camera.orthoRight = 800;
-    camera.orthoTop = 450;
-    camera.orthoBottom = -450;
-    thisScene.activeCamera = camera;
+    const babylon = createBabylonScene({
+      canvas,
+      clearColor: [0.04, 0.17, 0.27, 1],
+      width: 1600,
+      height: 900,
+    });
+    engineRef.current = babylon.engine;
+    const thisScene = babylon.scene;
 
     setScene(thisScene);
     setSceneVersion((v) => v + 1);
 
-    // 等布局确定后再 resize，避免 canvas 尺寸为 0
-    engine.resize();
-
-    engine.runRenderLoop(() => {
+    babylon.engine.runRenderLoop(() => {
       // 测试中心无游戏逻辑，仅驱动渲染以显示 HUD
       thisScene.render();
     });
 
-    const observer = new ResizeObserver(() => engine.resize());
-    observer.observe(canvas);
-
     return () => {
-      observer.disconnect();
-      engine.stopRenderLoop();
-      engine.dispose();
-      engineRef.current = null;
+      babylon.dispose();
       setScene(null);
       setSceneVersion(0);
     };

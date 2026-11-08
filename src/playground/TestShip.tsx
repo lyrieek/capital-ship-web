@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { Camera, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, Scene, Vector3, type StandardMaterial } from "@babylonjs/core";
+import { DynamicTexture, type Scene, type Mesh, type StandardMaterial } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { createOceanSurface } from "../expanse";
 import { ShipImpl } from "../ship/index";
@@ -16,7 +16,7 @@ import {
   ShipSelection,
   type SelectionRing,
 } from "../game/selection";
-import { createSpriteMaterial, toCanvas2D } from "../weapons";
+import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
 import "./playground.css";
 import "./TestShip.css";
 
@@ -39,20 +39,17 @@ const HUD_H = 56;
 // 演示用：按一次 F 键造成的伤害
 const DEMO_DAMAGE = 20;
 
-type PlaneMesh = ReturnType<typeof MeshBuilder.CreatePlane>;
-
 interface ShipVisual {
-  mesh: PlaneMesh;
+  mesh: Mesh;
   material: StandardMaterial;
   texture: DynamicTexture;
-  hud: PlaneMesh;
+  hud: Mesh;
   hudTexture: DynamicTexture;
   ring: SelectionRing;
   lastHp: number;
   lastState: Ship["state"];
   lastAlive: boolean;
 }
-
 const createShip = (team: "red" | "blue", name: string, x: number, y: number, dir: 1 | -1): Ship => {
   const cfg: ShipConfig = {
     x,
@@ -75,30 +72,6 @@ const createShips = (): Ship[] => [
   createShip("blue", "蓝-1", 700, 360, -1),
   createShip("blue", "蓝-2", 620, 480, 1),
 ];
-
-// 游戏像素坐标 -> 场景坐标（游戏原点在左上、y 向下；场景居中、y 向上）
-const worldToScene = (x: number, y: number, z = 0): Vector3 => new Vector3(x - W / 2, H / 2 - y, z);
-
-// 正交俯视相机
-function createCamera(scene: Scene): FreeCamera {
-  const camera = new FreeCamera("camera", new Vector3(0, 0, -100), scene);
-  camera.setTarget(Vector3.Zero());
-  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-  camera.orthoLeft = -W / 2;
-  camera.orthoRight = W / 2;
-  camera.orthoTop = H / 2;
-  camera.orthoBottom = -H / 2;
-  camera.minZ = 0.1;
-  camera.maxZ = 1000;
-  return camera;
-}
-
-function createPlane(name: string, width: number, height: number, scene: Scene, group: number): PlaneMesh {
-  const mesh = MeshBuilder.CreatePlane(name, { width, height }, scene);
-  mesh.renderingGroupId = group;
-  mesh.isPickable = false;
-  return mesh;
-}
 
 // 舰船本体 + 头顶 HUD，贴图复用游戏内同一套绘制函数
 function createShipVisual(ship: Ship, scene: Scene): ShipVisual {
@@ -212,10 +185,13 @@ function useShipScene(
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true }, true);
-    const scene = new Scene(engine);
-    scene.clearColor = new Color4(0.04, 0.17, 0.27, 1);
-    scene.activeCamera = createCamera(scene);
+    const babylon = createBabylonScene({
+      canvas,
+      clearColor: [0.04, 0.17, 0.27, 1],
+      width: W,
+      height: H,
+    });
+    const scene = babylon.scene;
 
     // 屏蔽右键菜单，否则右键移动会弹出浏览器菜单
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();
@@ -242,11 +218,9 @@ function useShipScene(
     bindOceanSelection(scene, oceanSurface.mesh, selection, { onMove: moveSelected });
     bindAttackKey(scene, () => demoAttack(shipsRef.current, selection));
 
-    engine.resize();
-
     let last = performance.now();
     let frames = 0;
-    engine.runRenderLoop(() => {
+    babylon.engine.runRenderLoop(() => {
       const now = performance.now();
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
@@ -265,20 +239,17 @@ function useShipScene(
 
       frames += 1;
       // 帧率统计限流，避免每帧触发 React 重渲染
-      if (frames % 15 === 0) setFps(Math.round(engine.getFps()));
+      if (frames % 15 === 0) setFps(Math.round(babylon.engine.getFps()));
     });
 
-    const observer = new ResizeObserver(() => engine.resize());
+    const observer = new ResizeObserver(() => babylon.engine.resize());
     observer.observe(canvas);
 
     return () => {
-      observer.disconnect();
+      babylon.dispose();
       canvas.removeEventListener("contextmenu", preventContextMenu);
-      engine.stopRenderLoop();
       visualsRef.current.clear();
       shipsRef.current = [];
-      scene.dispose();
-      engine.dispose();
     };
   }, [canvasRef, moveSelected, selection, shipsRef, visualsRef]);
 
