@@ -5,7 +5,7 @@ import type { Ship } from "../ship/ship";
 import { renderGame } from "./render";
 import { H, W, P, rand } from "./utils";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
-import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles, withinRange } from "../weapons";
+import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
 
 const TAU = Math.PI * 2;
 
@@ -94,23 +94,24 @@ export function initializeGame(): GameState {
       for (const projectile of projectiles) this.projectiles.push(projectile);
     },
 
-    focusFire(ships: readonly Ship[]) {
+    focusFireAt(ships: readonly Ship[], x: number, y: number): void {
       if (this.over || this.manualFireCD > 0) return;
 
       let anyFired = false;
       for (const ship of ships) {
         if (!ship.alive) continue;
-        const target = ship.findTarget();
-        if (!target) continue;
+
+        // 手动齐射向指定世界点开火（默认对准鼠标位置），炮管随即转向该点
+        ship.aimAngle = Math.atan2(y - ship.y, x - ship.x);
 
         let fired = false;
-        if (withinRange(ship, target, SHELL.range)) {
-          this.fireShell(ship, target);
+        if (ship.gunCD <= 0) {
+          this.fireShellAt(ship, x, y);
           ship.gunCD = rand(SHELL.cooldownMin, SHELL.cooldownMax);
           fired = true;
         }
-        if (withinRange(ship, target, TORPEDO.range)) {
-          this.fireTorpedo(ship, target);
+        if (ship.torpCD <= 0) {
+          this.fireTorpedoAt(ship, x, y);
           ship.torpCD = rand(TORPEDO.cooldownMin, TORPEDO.cooldownMax);
           fired = true;
         }
@@ -122,6 +123,38 @@ export function initializeGame(): GameState {
       }
 
       if (anyFired) this.manualFireCD = MANUAL_FIRE_COOLDOWN;
+    },
+
+    // 向世界坐标点开火主炮（不预测目标，直取给定点）
+    fireShellAt(ship: Ship, x: number, y: number) {
+      const spec = getWeaponSpec("shell");
+      const from = { x: ship.x, y: ship.y };
+      const projectiles = fireWeapon(
+        "shell",
+        ship,
+        from,
+        { x, y },
+        {
+          bounds: { width: W, height: H, margin: 20 },
+          onMuzzle: (point) => createParticles(point.x, point.y, spec.muzzleParticles, spec.muzzleColor, this.particles),
+        },
+      );
+      for (const projectile of projectiles) this.projectiles.push(projectile);
+    },
+
+    // 向世界坐标点开火鱼雷（不预测目标，直取给定点）
+    fireTorpedoAt(ship: Ship, x: number, y: number) {
+      const from = { x: ship.x, y: ship.y };
+      const projectiles = fireWeapon(
+        "torp",
+        ship,
+        from,
+        { x, y },
+        {
+          bounds: { width: W, height: H, margin: 20 },
+        },
+      );
+      for (const projectile of projectiles) this.projectiles.push(projectile);
     },
 
     burst(x: number, y: number, n: number, color: string) {

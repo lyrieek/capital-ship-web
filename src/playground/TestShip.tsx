@@ -7,16 +7,9 @@ import type { Ship, ShipConfig } from "../ship/ship";
 import { paintShip, paintShipHud } from "../game/textures";
 import { H, P, W, approachAngle } from "../game/utils";
 import { issueSelectionSail, updateSailOrder } from "../game/movement";
-import {
-  bindAttackKey,
-  bindOceanSelection,
-  bindShipSelection,
-  createSelectionRing,
-  nearestEnemyOrders,
-  ShipSelection,
-  type SelectionRing,
-} from "../game/selection";
+import { bindAttackKey, bindOceanSelection, bindShipSelection, createSelectionRing, ShipSelection, type SelectionRing } from "../game/selection";
 import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
+import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
 import "./playground.css";
 import "./TestShip.css";
 
@@ -33,11 +26,9 @@ const RING_Z = -0.5;
 
 // 舰船贴图放大倍率（矢量绘制，放大后更清晰）
 const SHIP_TEX_SCALE = 2;
-// 单艘舰船的 HUD 贴图尺寸（世界单位 / 像素）
+// 单艘舰船的 HUD 贴图基础尺寸（世界单位 / 像素），随 shipSize 缩放
 const HUD_W = 160;
 const HUD_H = 56;
-// 演示用：按一次 F 键造成的伤害
-const DEMO_DAMAGE = 20;
 
 interface ShipVisual {
   mesh: Mesh;
@@ -49,6 +40,7 @@ interface ShipVisual {
   lastHp: number;
   lastState: Ship["state"];
   lastAlive: boolean;
+  shipSize: number;
 }
 const createShip = (team: "red" | "blue", name: string, x: number, y: number, dir: 1 | -1): Ship => {
   const cfg: ShipConfig = {
@@ -73,28 +65,26 @@ const createShips = (): Ship[] => [
   createShip("blue", "蓝-2", 620, 480, 1),
 ];
 
-// 舰船本体 + 头顶 HUD，贴图复用游戏内同一套绘制函数
-function createShipVisual(ship: Ship, scene: Scene): ShipVisual {
-  const texture = new DynamicTexture(
-    `shipTexture_${ship.name}`,
-    { width: ship.len * SHIP_TEX_SCALE, height: ship.wid * SHIP_TEX_SCALE },
-    scene,
-    true,
-  );
-  paintShip(toCanvas2D(texture), ship, SHIP_TEX_SCALE);
+// 舰船本体 + 头顶 HUD，贴图复用游戏内同一套绘制函数；shipSize 缩放舰船与 HUD 尺寸，默认 1
+function createShipVisual(ship: Ship, scene: Scene, shipSize = 1): ShipVisual {
+  const scale = SHIP_TEX_SCALE * shipSize;
+  const texture = new DynamicTexture(`shipTexture_${ship.name}`, { width: ship.len * scale, height: ship.wid * scale }, scene, true);
+  paintShip(toCanvas2D(texture), ship, scale);
   texture.update();
 
-  const mesh = createPlane(`ship_${ship.name}`, ship.len, ship.wid, scene, RG_SHIP);
+  const mesh = createPlane(`ship_${ship.name}`, ship.len * shipSize, ship.wid * shipSize, scene, RG_SHIP);
   mesh.material = createSpriteMaterial(`shipMaterial_${ship.name}`, texture, scene);
   mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
   mesh.metadata = ship;
   mesh.isPickable = true;
 
-  const hudTexture = new DynamicTexture(`shipHudTexture_${ship.name}`, { width: HUD_W, height: HUD_H }, scene, true);
-  paintShipHud(toCanvas2D(hudTexture), ship, HUD_W, HUD_H);
+  const hudWidth = HUD_W * shipSize;
+  const hudHeight = HUD_H * shipSize;
+  const hudTexture = new DynamicTexture(`shipHudTexture_${ship.name}`, { width: hudWidth, height: hudHeight }, scene, true);
+  paintShipHud(toCanvas2D(hudTexture), ship, hudWidth, hudHeight);
   hudTexture.update();
 
-  const hud = createPlane(`shipHud_${ship.name}`, HUD_W, HUD_H, scene, RG_HUD);
+  const hud = createPlane(`shipHud_${ship.name}`, hudWidth, hudHeight, scene, RG_HUD);
   hud.material = createSpriteMaterial(`shipHudMaterial_${ship.name}`, hudTexture, scene);
 
   const ring = createSelectionRing(scene, ship, RG_OCEAN);
@@ -110,6 +100,7 @@ function createShipVisual(ship: Ship, scene: Scene): ShipVisual {
     lastHp: -1,
     lastState: "normal",
     lastAlive: true,
+    shipSize,
   };
 }
 
@@ -128,10 +119,12 @@ function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean): void
   const flash = 1 + ship.hitFlash * 0.9;
   visual.material.emissiveColor.set(flash, flash, flash);
 
-  visual.hud.position.copyFrom(worldToScene(ship.x, ship.y - (ship.wid / 2 + 20), HUD_Z));
+  visual.hud.position.copyFrom(worldToScene(ship.x, ship.y - (ship.wid / 2 + 20) * visual.shipSize, HUD_Z));
 
   if (visual.lastHp !== ship.hp || visual.lastState !== ship.state || visual.lastAlive !== alive) {
-    paintShipHud(toCanvas2D(visual.hudTexture), ship, HUD_W, HUD_H);
+    const hudWidth = HUD_W * visual.shipSize;
+    const hudHeight = HUD_H * visual.shipSize;
+    paintShipHud(toCanvas2D(visual.hudTexture), ship, hudWidth, hudHeight);
     visual.hudTexture.update();
     visual.lastHp = ship.hp;
     visual.lastState = ship.state;
@@ -161,11 +154,27 @@ function stepShip(ship: Ship, dt: number): void {
   }
 }
 
-// F 键：选中的舰船攻击最近的敌舰（仅演示命中与血条变化）
-function demoAttack(ships: readonly Ship[], selection: ShipSelection): void {
-  for (const { ship, target } of nearestEnemyOrders(ships, selection.list)) {
-    ship.recoil = 1;
-    target.hp = Math.max(0, target.hp - DEMO_DAMAGE);
+// F 键：选中的舰船向鼠标所在世界位置开火（仅演示命中与血条变化）
+function demoAttack(ships: readonly Ship[], selection: ShipSelection, mouse: { x: number; y: number } | null): void {
+  if (!mouse) return;
+
+  for (const ship of selection.list) {
+    if (ship.alive) ship.recoil = 1;
+  }
+
+  let target: Ship | null = null;
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const candidate of ships) {
+    if (!candidate.alive) continue;
+    const distance = (candidate.x - mouse.x) ** 2 + (candidate.y - mouse.y) ** 2;
+    if (distance < nearest) {
+      nearest = distance;
+      target = candidate;
+    }
+  }
+
+  if (target && nearest < 150 ** 2) {
+    target.takeDamage(20);
     target.hitFlash = 1;
   }
 }
@@ -177,9 +186,11 @@ function useShipScene(
   visualsRef: RefObject<Map<Ship, ShipVisual>>,
   selection: ShipSelection,
   moveSelected: (x: number, y: number) => void,
+  shipSize = 1,
 ): number {
   const timeRef = useRef(0);
   const [fps, setFps] = useState(0);
+  const mouseRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -192,10 +203,6 @@ function useShipScene(
       height: H,
     });
     const scene = babylon.scene;
-
-    // 屏蔽右键菜单，否则右键移动会弹出浏览器菜单
-    const preventContextMenu = (event: MouseEvent) => event.preventDefault();
-    canvas.addEventListener("contextmenu", preventContextMenu);
 
     const oceanSurface = createOceanSurface({
       scene,
@@ -211,12 +218,27 @@ function useShipScene(
 
     shipsRef.current = createShips();
     for (const ship of shipsRef.current) {
-      const visual = createShipVisual(ship, scene);
+      const visual = createShipVisual(ship, scene, shipSize);
       visualsRef.current.set(ship, visual);
       bindShipSelection(scene, visual.mesh, ship, selection, { onMove: moveSelected });
     }
     bindOceanSelection(scene, oceanSurface.mesh, selection, { onMove: moveSelected });
-    bindAttackKey(scene, () => demoAttack(shipsRef.current, selection));
+    bindAttackKey(scene, () => demoAttack(shipsRef.current, selection, mouseRef.current));
+
+    const toWorld = (event: MouseEvent): { x: number; y: number } | null => {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      return {
+        x: ((event.clientX - rect.left) / rect.width) * W,
+        y: ((event.clientY - rect.top) / rect.height) * H,
+      };
+    };
+
+    const handleMove = (event: MouseEvent) => {
+      const point = toWorld(event);
+      if (point) mouseRef.current = point;
+    };
+    canvas.addEventListener("mousemove", handleMove);
 
     let last = performance.now();
     let frames = 0;
@@ -242,32 +264,32 @@ function useShipScene(
       if (frames % 15 === 0) setFps(Math.round(babylon.engine.getFps()));
     });
 
-    const observer = new ResizeObserver(() => babylon.engine.resize());
-    observer.observe(canvas);
-
     return () => {
+      canvas.removeEventListener("mousemove", handleMove);
       babylon.dispose();
-      canvas.removeEventListener("contextmenu", preventContextMenu);
       visualsRef.current.clear();
       shipsRef.current = [];
     };
-  }, [canvasRef, moveSelected, selection, shipsRef, visualsRef]);
+  }, [canvasRef, moveSelected, selection, shipsRef, visualsRef, shipSize]);
 
   return fps;
 }
 
-function useShipDebug(canvasRef: RefObject<HTMLCanvasElement | null>) {
+function useShipDebug(canvasRef: RefObject<HTMLCanvasElement | null>, shipSize = 1) {
   const shipsRef = useRef<Ship[]>([]);
   const visualsRef = useRef<Map<Ship, ShipVisual>>(new Map());
   const [selectedCount, setSelectedCount] = useState(0);
   // 选择状态由共用控制器维护，React 只订阅数量用于面板显示
   const [selection] = useState(() => new ShipSelection((ships) => setSelectedCount(ships.length)));
 
+  // 屏蔽右键菜单，否则右键移动会弹出浏览器菜单
+  usePreventContextMenu(canvasRef);
+
   const moveSelected = useCallback((x: number, y: number) => issueSelectionSail(selection.list, x, y), [selection]);
 
   const clearSelection = useCallback(() => selection.clear(), [selection]);
 
-  const fps = useShipScene(canvasRef, shipsRef, visualsRef, selection, moveSelected);
+  const fps = useShipScene(canvasRef, shipsRef, visualsRef, selection, moveSelected, shipSize);
 
   return { fps, selectedCount, clearSelection };
 }
@@ -275,7 +297,8 @@ function useShipDebug(canvasRef: RefObject<HTMLCanvasElement | null>) {
 export default function TestShip() {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { fps, selectedCount, clearSelection } = useShipDebug(canvasRef);
+  const [shipSize, setShipSize] = useState(1);
+  const { fps, selectedCount, clearSelection } = useShipDebug(canvasRef, shipSize);
 
   return (
     <div className="playground">
@@ -286,6 +309,10 @@ export default function TestShip() {
           <button type="button" onClick={clearSelection}>
             {t("ship.clearSelection")}
           </button>
+          <label className="playground-field">
+            <span>shipSize</span>
+            <input type="number" min="0.1" step="0.1" value={shipSize} onChange={(e) => setShipSize(Math.max(0.1, Number(e.target.value || 1)))} />
+          </label>
           <p>
             {t("ship.selected")}: {selectedCount}
           </p>

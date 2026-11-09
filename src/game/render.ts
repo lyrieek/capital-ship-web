@@ -70,6 +70,7 @@ interface ShipVisual {
   lastState: Ship["state"];
   lastAlive: boolean;
   lastRecoil: number;
+  shipSize: number;
 }
 const shipVisuals = new Map<Ship, ShipVisual>();
 
@@ -102,22 +103,20 @@ function poolGet(pool: PlaneMesh[], index: number, create: (index: number) => Pl
   return created;
 }
 
-function createShipVisual(ship: Ship): ShipVisual {
-  const texture = new DynamicTexture(
-    `shipTexture_${ship.name}`,
-    { width: ship.len * SHIP_TEX_SCALE, height: ship.wid * SHIP_TEX_SCALE },
-    scene!,
-    true,
-  );
-  paintShip(toCanvas2D(texture), ship, SHIP_TEX_SCALE);
+function createShipVisual(ship: Ship, shipSize = 1): ShipVisual {
+  const scale = SHIP_TEX_SCALE * shipSize;
+  const texture = new DynamicTexture(`shipTexture_${ship.name}`, { width: ship.len * scale, height: ship.wid * scale }, scene!, true);
+  paintShip(toCanvas2D(texture), ship, scale);
   texture.update();
 
-  const mesh = createPlane(`ship_${ship.name}`, ship.len, ship.wid, scene!, RG_SHIP);
+  const mesh = createPlane(`ship_${ship.name}`, ship.len * shipSize, ship.wid * shipSize, scene!, RG_SHIP);
   const material = createSpriteMaterial(`shipMaterial_${ship.name}`, texture, scene!);
   mesh.material = material;
 
-  const shipHudTexture = new DynamicTexture(`shipHudTexture_${ship.name}`, { width: HUD_W, height: HUD_H }, scene!, true);
-  const hud = createPlane(`shipHud_${ship.name}`, HUD_W, HUD_H, scene!, RG_OVERLAY);
+  const hudWidth = HUD_W * shipSize;
+  const hudHeight = HUD_H * shipSize;
+  const shipHudTexture = new DynamicTexture(`shipHudTexture_${ship.name}`, { width: hudWidth, height: hudHeight }, scene!, true);
+  const hud = createPlane(`shipHud_${ship.name}`, hudWidth, hudHeight, scene!, RG_OVERLAY);
   const hudMaterial = createSpriteMaterial(`shipHudMaterial_${ship.name}`, shipHudTexture, scene!);
   hud.material = hudMaterial;
 
@@ -140,8 +139,9 @@ function createShipVisual(ship: Ship): ShipVisual {
     lastState: "normal",
     lastAlive: true,
     lastRecoil: -1,
+    shipSize,
   };
-  paintShipHud(toCanvas2D(shipHudTexture), ship, HUD_W, HUD_H);
+  paintShipHud(toCanvas2D(shipHudTexture), ship, hudWidth, hudHeight);
   shipHudTexture.update();
   return visual;
 }
@@ -176,12 +176,14 @@ function syncShips(game: GameState) {
     const flash = 1 + ship.hitFlash * 0.9;
     visual.material.emissiveColor.set(flash, flash, flash);
 
-    visual.hud.position.copyFrom(worldToScene(ship.x, ship.y - (ship.wid / 2 + 20), HUD_Z));
+    visual.hud.position.copyFrom(worldToScene(ship.x, ship.y - (ship.wid / 2 + 20) * visual.shipSize, HUD_Z));
 
     if (visual.lastHp !== ship.hp || visual.lastState !== ship.state || visual.lastAlive !== alive || visual.lastRecoil !== ship.recoil) {
-      paintShip(toCanvas2D(visual.texture), ship, SHIP_TEX_SCALE);
+      const hudWidth = HUD_W * visual.shipSize;
+      const hudHeight = HUD_H * visual.shipSize;
+      paintShip(toCanvas2D(visual.texture), ship, SHIP_TEX_SCALE * visual.shipSize);
       visual.texture.update();
-      paintShipHud(toCanvas2D(visual.hudTexture), ship, HUD_W, HUD_H);
+      paintShipHud(toCanvas2D(visual.hudTexture), ship, hudWidth, hudHeight);
       visual.hudTexture.update();
       visual.lastHp = ship.hp;
       visual.lastState = ship.state;
