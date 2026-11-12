@@ -11,7 +11,17 @@ import { H, W } from "./utils";
 import { bindOceanSelection, bindShipSelection, ShipSelection } from "./selection";
 import { issueSelectionSail } from "./movement";
 import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
-import { createShipVisual, type ShipVisual, SHIP_Z, HUD_Z, RING_Z, SHIP_TEX_SCALE, HUD_W, HUD_H } from "../ship/render-visual";
+import {
+  createShipVisual,
+  type ShipVisual,
+  SHIP_Z,
+  HUD_Z,
+  RING_Z,
+  SHIP_TEX_SCALE,
+  HUD_W,
+  HUD_H,
+  updateShipNavigationLine,
+} from "../ship/render-visual";
 
 // 平面 Mesh 类型（避免为仅作类型的 Mesh 引入额外 import）
 type PlaneMesh = Mesh;
@@ -95,6 +105,14 @@ function syncShips(game: GameState) {
     visual.ring.mesh.setEnabled(alive && (shipSelection?.has(ship) ?? false));
     if (!alive) continue;
 
+    // 航行导航虚线：仅选中且有航行目标时显示，每帧重新计算不残留旧点
+    if (shipSelection?.has(ship)) {
+      updateShipNavigationLine(visual, ship, scene!);
+    } else if (visual.line) {
+      visual.line.dispose();
+      visual.line = null;
+    }
+
     visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
     visual.mesh.rotation.z = -ship.angle;
 
@@ -129,6 +147,7 @@ function syncShips(game: GameState) {
     visual.ring.dispose();
     visual.texture.dispose();
     visual.hudTexture.dispose();
+    visual.line?.dispose();
     shipVisuals.delete(ship);
   }
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import type { Scene } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { createOceanSurface } from "../expanse";
 import { ShipImpl } from "../ship/index";
@@ -9,7 +10,7 @@ import { issueSelectionSail, updateSailOrder } from "../game/movement";
 import { bindAttackKey, bindOceanSelection, bindShipSelection, ShipSelection } from "../game/selection";
 import { createBabylonScene, toCanvas2D, worldToScene } from "../babylon";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
-import { createShipVisual, type ShipVisual, SHIP_Z, HUD_Z, RING_Z, HUD_W, HUD_H } from "../ship/render-visual";
+import { createShipVisual, type ShipVisual, SHIP_Z, HUD_Z, RING_Z, HUD_W, HUD_H, updateShipNavigationLine } from "../ship/render-visual";
 import "./playground.css";
 import "./TestShip.css";
 
@@ -40,12 +41,20 @@ const createShips = (): Ship[] => [
 ];
 
 // 把舰船状态同步到 Babylon 可视对象（位置 / 朝向 / 命中闪白 / 血条）
-function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean): void {
+function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean, scene: Scene): void {
   const alive = ship.alive;
   visual.mesh.setEnabled(alive);
   visual.hud.setEnabled(alive);
   visual.ring.mesh.setEnabled(alive && selected);
   if (!alive) return;
+
+  // 航行导航虚线：仅选中且有航行目标时显示，每帧重新计算不残留旧点
+  if (selected) {
+    updateShipNavigationLine(visual, ship, scene);
+  } else if (visual.line) {
+    visual.line.dispose();
+    visual.line = null;
+  }
 
   visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
   visual.mesh.rotation.z = -ship.angle;
@@ -200,7 +209,7 @@ function useShipScene(
       for (const ship of shipsRef.current) {
         stepShip(ship, dt);
         const visual = visualsRef.current.get(ship);
-        if (visual) syncShipVisual(ship, visual, selection.has(ship));
+        if (visual) syncShipVisual(ship, visual, selection.has(ship), scene);
       }
 
       scene.render();

@@ -1,6 +1,6 @@
 // 舰船可视对象的创建：主游戏与 playground 共用同一套，避免重复实现。
 // bindShipSelection 由调用方自行绑定，此处只负责 Mesh / 贴图 / 选中圈的创建。
-import { DynamicTexture, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
+import { Color3, DynamicTexture, MeshBuilder, StandardMaterial, type Mesh, type Scene } from "@babylonjs/core";
 import { paintShip, paintShipHud } from "../game/textures";
 import { createSelectionRing, type SelectionRing } from "../game/selection";
 import { createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
@@ -31,6 +31,7 @@ export interface ShipVisual {
   hudMaterial: StandardMaterial;
   hudTexture: DynamicTexture;
   ring: SelectionRing;
+  line: Mesh | null;
   lastHp: number;
   lastState: Ship["state"];
   lastAlive: boolean;
@@ -80,10 +81,54 @@ export function createShipVisual(ship: Ship, scene: Scene, shipSize = 1): ShipVi
     hudMaterial,
     hudTexture,
     ring,
+    line: null,
     lastHp: -1,
     lastState: "normal",
     lastAlive: true,
     lastRecoil: -1,
     shipSize,
   };
+}
+
+/**
+ * 更新舰船的航行导航虚线：从船当前位置到右键下达的目标点。
+ * 每帧重新计算并重建，不保留旧点位，避免残留轨迹线。
+ * ship 无航行目标（order 为 null）时销毁旧线。
+ */
+export function updateShipNavigationLine(visual: ShipVisual, ship: Ship, scene: Scene): void {
+  const order = ship.order;
+  if (!order) {
+    if (visual.line) {
+      visual.line.dispose();
+      visual.line = null;
+    }
+    return;
+  }
+
+  const start = worldToScene(ship.x, ship.y, RING_Z);
+  const end = worldToScene(order.x, order.y, RING_Z);
+
+  // 每帧销毁旧线后重建，确保线只连接当前船位到当前目标点，不残留历史轨迹
+  if (visual.line) {
+    visual.line.dispose();
+  }
+
+  visual.line = MeshBuilder.CreateDashedLines(
+    `navLine_${ship.name}`,
+    {
+      points: [start, end],
+      dashNb: 24,
+      gapSize: 5,
+      dashSize: 5,
+    },
+    scene,
+  );
+  visual.line.renderingGroupId = RG_HUD;
+  visual.line.isPickable = false;
+
+  const material = new StandardMaterial(`navLineMaterial_${ship.name}`, scene);
+  material.diffuseColor = Color3.FromHexString("#4ade80");
+  material.emissiveColor = Color3.FromHexString("#4ade80");
+  material.alpha = 0.6;
+  visual.line.material = material;
 }

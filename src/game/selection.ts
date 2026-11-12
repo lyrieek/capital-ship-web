@@ -1,12 +1,7 @@
 // 舰船选择、选中圈与手动攻击：主游戏和 playground 共用
-import { ActionManager, DynamicTexture, ExecuteCodeAction, KeyboardEventTypes, type Mesh, type Scene } from "@babylonjs/core";
+import { ActionManager, Color3, ExecuteCodeAction, KeyboardEventTypes, MeshBuilder, StandardMaterial, type Mesh, type Scene } from "@babylonjs/core";
 import type { Ship } from "../ship/ship";
-import { createSpriteMaterial, createPlane, toCanvas2D } from "../babylon";
 import { H, W } from "./utils";
-
-const RING_TEX_WIDTH = 240;
-const RING_TEX_HEIGHT = 120;
-const RING_COLOR = "#4ade80";
 
 export interface AttackOrder {
   ship: Ship;
@@ -91,26 +86,36 @@ export function nearestEnemyOrders(ships: readonly Ship[], selected: readonly Sh
   return orders;
 }
 
-// 选中圈：画在贴图上，作为舰船下方的绿色椭圆环
-export function paintSelectionRing(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-  ctx.clearRect(0, 0, width, height);
-  ctx.strokeStyle = RING_COLOR;
-  ctx.lineWidth = Math.max(4, Math.round(height * 0.06));
-  ctx.beginPath();
-  ctx.ellipse(width / 2, height / 2, width / 2 - 8, height / 2 - 8, 0, 0, Math.PI * 2);
-  ctx.stroke();
-}
-
-// 创建贴在海面、舰船下方的选中圈（位置由调用方同步）
+// 创建贴在海面、舰船下方的选中圈：使用 Babylon 原生 Torus 网格，作为舰船下方的绿色椭圆环
+// 默认 Torus 立于 XZ 平面，rotation.x = PI/2 将其躺平到 XY 平面面对正交相机；
+// X 轴保持完整直径（宽，对应舰船长度方向），Y 轴按舰船宽度缩放（窄），形成“宽长高窄”的椭圆；
+// 单面朝相机 + 轻微透明，保持完整不闪烁，不做任何动画。
 export function createSelectionRing(scene: Scene, ship: Ship, renderingGroupId: number): SelectionRing {
-  const texture = new DynamicTexture(`shipRingTexture_${ship.name}`, { width: RING_TEX_WIDTH, height: RING_TEX_HEIGHT }, scene, true);
-  paintSelectionRing(toCanvas2D(texture), RING_TEX_WIDTH, RING_TEX_HEIGHT);
-  texture.update();
-
-  const mesh = createPlane(`shipRing_${ship.name}`, ship.len * 1.3, ship.wid * 2, scene, renderingGroupId);
+  const diameter = ship.len * 1.3;
+  const mesh = MeshBuilder.CreateTorus(
+    `shipRing_${ship.name}`,
+    {
+      diameter,
+      thickness: 4,
+      tessellation: 64,
+    },
+    scene,
+  );
+  // 躺平到 XY 平面面对相机；X 轴完整，Y 轴按宽度压扁
+  mesh.rotation.x = Math.PI / 2;
+  mesh.scaling.set(1, (ship.wid * 2) / diameter, 1);
+  mesh.renderingGroupId = renderingGroupId;
   mesh.isPickable = false;
 
-  const material = createSpriteMaterial(`shipRingMaterial_${ship.name}`, texture, scene);
+  const material = new StandardMaterial(`shipRingMaterial_${ship.name}`, scene);
+  material.diffuseColor = Color3.FromHexString("#4ade80");
+  material.emissiveColor = Color3.FromHexString("#4ade80");
+  material.alpha = 0.6;
+  // 单面朝相机，避免正反面透明叠加在薄环上产生深度闪烁
+  // separateCullingPass：先渲染背面再渲染正面，修复单网格内自透明导致的三角形排序瑕疵
+  // disableDepthWrite：选中圈不写入深度缓冲，不遮挡其上的舰船与血条
+  material.separateCullingPass = true;
+  material.disableDepthWrite = true;
   mesh.material = material;
   mesh.setEnabled(false);
 
@@ -119,7 +124,6 @@ export function createSelectionRing(scene: Scene, ship: Ship, renderingGroupId: 
     dispose: () => {
       mesh.dispose();
       material.dispose();
-      texture.dispose();
     },
   };
 }
