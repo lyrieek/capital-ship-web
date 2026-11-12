@@ -8,6 +8,7 @@ import { H, W, P } from "./utils";
 import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
 
 const TAU = Math.PI * 2;
+const END_DELAY = 3;
 
 // 手动齐射（F 键）的公共冷却，避免连续按键无限输出
 const MANUAL_FIRE_COOLDOWN = 2.5;
@@ -27,6 +28,23 @@ function createParticles(x: number, y: number, n: number, color: string, particl
       maxLife: life,
       size: Math.random() * 3 + 1.5,
       color,
+    });
+  }
+}
+
+function createSmoke(x: number, y: number, particles: ParticleItem[]) {
+  const colors = ["#475569", "#64748b", "#94a3b8"];
+  for (let i = 0; i < 3; i++) {
+    const life = Math.random() * 0.6 + 1;
+    particles.push({
+      x: x + Math.random() * 18 - 9,
+      y: y + Math.random() * 12 - 6,
+      vx: Math.random() * 20 - 10,
+      vy: -Math.random() * 22 - 12,
+      life,
+      maxLife: life,
+      size: Math.random() * 5 + 7,
+      color: colors[Math.floor(Math.random() * colors.length)],
     });
   }
 }
@@ -52,6 +70,7 @@ export function initializeGame(): GameState {
     particles,
     time: 0,
     over: false,
+    endTimer: null,
     winnerTeam: null,
     manualFireCD: 0,
 
@@ -60,6 +79,7 @@ export function initializeGame(): GameState {
       this.particles.length = 0;
       this.time = 0;
       this.over = false;
+      this.endTimer = null;
       this.winnerTeam = null;
       this.manualFireCD = 0;
 
@@ -143,6 +163,10 @@ export function initializeGame(): GameState {
       createParticles(x, y, n, color, this.particles);
     },
 
+    smoke(x: number, y: number) {
+      createSmoke(x, y, this.particles);
+    },
+
     resolveCollisions() {
       const alive = this.ships.filter((s) => s.hp > 0);
       for (let i = 0; i < alive.length; i++) {
@@ -212,9 +236,16 @@ export function initializeGame(): GameState {
 
       if (!this.over) {
         const teams = new Set(this.ships.filter((s) => s.hp > 0).map((s) => s.team));
-        if (teams.size <= 1) {
-          this.over = true;
-          this.winnerTeam = teams.size === 1 ? [...teams][0] : null;
+        if (teams.size > 1) {
+          this.endTimer = null;
+        } else if (this.endTimer === null) {
+          this.endTimer = END_DELAY;
+        } else {
+          this.endTimer = Math.max(0, this.endTimer - dt);
+          if (this.endTimer === 0) {
+            this.over = true;
+            this.winnerTeam = teams.size === 1 ? [...teams][0] : null;
+          }
         }
       }
     },

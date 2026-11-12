@@ -39,6 +39,7 @@ export class ShipImpl implements Ship {
   gunCD: number;
   torpCD: number;
   hitFlash: number;
+  smokeTimer: number;
   recoil: number;
   aimAngle: number;
   aimOrder: SailOrder | null;
@@ -74,6 +75,7 @@ export class ShipImpl implements Ship {
     this.gunCD = rand(CANNON.initialCooldownMin, CANNON.initialCooldownMax);
     this.torpCD = rand(TORPEDO.initialCooldownMin, TORPEDO.initialCooldownMax);
     this.hitFlash = 0;
+    this.smokeTimer = 0;
     this.recoil = 0;
     this.aimAngle = this.baseAngle;
     this.aimOrder = null;
@@ -169,6 +171,13 @@ export class ShipImpl implements Ship {
     // 减少闪白和后坐力效果
     this.hitFlash = Math.max(0, this.hitFlash - dt * 4);
     this.recoil = Math.max(0, this.recoil - dt * 6);
+    if (this.hp < this.maxHp) {
+      this.smokeTimer -= dt;
+      if (this.smokeTimer <= 0) {
+        getGameInstance()?.smoke(this.x, this.y);
+        this.smokeTimer = this.hp / this.maxHp < 0.3 ? 0.22 : this.hp / this.maxHp < 0.6 ? 0.4 : 0.75;
+      }
+    }
     this.stateT += dt;
 
     // 有航行指令时，本帧由指令接管移动（转向 + 前进）；否则按原状态机巡航

@@ -46,6 +46,8 @@ export interface GameState {
   time: number;
   // 游戏是否结束
   over: boolean;
+  // 阵营首次被全歼后的结束倒计时（秒）
+  endTimer: number | null;
   // 获胜阵营：red-红方，blue-蓝方，null-平局
   winnerTeam: "red" | "blue" | null;
   // 手动齐射剩余冷却时间（秒）
@@ -89,6 +91,9 @@ export interface GameState {
    * @param x, y: 爆炸中心坐标, n: 粒子数量, color: 粒子颜色
    */
   burst(x: number, y: number, n: number, color: string): void;
+
+  /** 在舰船位置产生上升烟雾 */
+  smoke(x: number, y: number): void;
 
   /**
    * 处理舰船间碰撞（同舰互推开）

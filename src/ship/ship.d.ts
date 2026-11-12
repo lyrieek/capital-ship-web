@@ -35,6 +35,8 @@ export interface Ship extends ShipConfig {
   order: SailOrder | null;
   // 当前生命值
   hp: number;
+  // 受损后下一次产生烟雾的剩余时间
+  smokeTimer: number;
   // 最大生命值
   maxHp: number;
   // 舰船长度
