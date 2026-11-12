@@ -8,9 +8,10 @@ import { createWeaponRender, type WeaponRender } from "../weapons";
 import type { GameState, ParticleItem } from "./types";
 import type { Ship } from "../ship/ship";
 import { H, W } from "./utils";
-import { bindOceanSelection, bindShipSelection, createSelectionRing, ShipSelection, type SelectionRing } from "./selection";
+import { bindOceanSelection, bindShipSelection, ShipSelection } from "./selection";
 import { issueSelectionSail } from "./movement";
 import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
+import { createShipVisual, type ShipVisual, SHIP_Z, HUD_Z, RING_Z, SHIP_TEX_SCALE, HUD_W, HUD_H } from "../ship/render-visual";
 
 // 平面 Mesh 类型（避免为仅作类型的 Mesh 引入额外 import）
 type PlaneMesh = Mesh;
@@ -18,22 +19,7 @@ type PlaneMesh = Mesh;
 // 渲染分组（Babylon 最多 4 组 0..3），组间自动清深度，按组顺序层叠；
 // 不能依赖 Z 距离排序：正交相机下远处水面到相机的距离反而更近，会盖住舰船。
 const RG_WATER = 0;
-const RG_SHIP = 1;
 const RG_FX = 2;
-const RG_OVERLAY = 3;
-
-// 舰船贴图放大倍率（矢量绘制，放大后更清晰）
-const SHIP_TEX_SCALE = 2;
-
-// 单艘舰船的 HUD 贴图尺寸（世界单位 / 像素）
-const HUD_W = 160;
-const HUD_H = 56;
-
-// Z 偏移：舰船贴图比海面更靠近相机，保证点击时优先选中舰船
-const SHIP_Z = -1;
-const HUD_Z = -2;
-// 选中圈贴在海面之上、舰船之下
-const RING_Z = -0.5;
 
 // 场景资源
 let engine: Engine | null = null;
@@ -58,20 +44,6 @@ function moveSelection(x: number, y: number): void {
 }
 
 // 每艘舰船对应的可视对象（reset 会重建舰船，故按对象身份做增删）
-interface ShipVisual {
-  mesh: PlaneMesh;
-  material: StandardMaterial;
-  texture: DynamicTexture;
-  hud: PlaneMesh;
-  hudMaterial: StandardMaterial;
-  hudTexture: DynamicTexture;
-  ring: SelectionRing;
-  lastHp: number;
-  lastState: Ship["state"];
-  lastAlive: boolean;
-  lastRecoil: number;
-  shipSize: number;
-}
 const shipVisuals = new Map<Ship, ShipVisual>();
 
 // 粒子使用对象池复用 Mesh，避免频繁创建销毁
@@ -103,49 +75,6 @@ function poolGet(pool: PlaneMesh[], index: number, create: (index: number) => Pl
   return created;
 }
 
-function createShipVisual(ship: Ship, shipSize = 1): ShipVisual {
-  const scale = SHIP_TEX_SCALE * shipSize;
-  const texture = new DynamicTexture(`shipTexture_${ship.name}`, { width: ship.len * scale, height: ship.wid * scale }, scene!, true);
-  paintShip(toCanvas2D(texture), ship, scale);
-  texture.update();
-
-  const mesh = createPlane(`ship_${ship.name}`, ship.len * shipSize, ship.wid * shipSize, scene!, RG_SHIP);
-  const material = createSpriteMaterial(`shipMaterial_${ship.name}`, texture, scene!);
-  mesh.material = material;
-
-  const hudWidth = HUD_W * shipSize;
-  const hudHeight = HUD_H * shipSize;
-  const shipHudTexture = new DynamicTexture(`shipHudTexture_${ship.name}`, { width: hudWidth, height: hudHeight }, scene!, true);
-  const hud = createPlane(`shipHud_${ship.name}`, hudWidth, hudHeight, scene!, RG_OVERLAY);
-  const hudMaterial = createSpriteMaterial(`shipHudMaterial_${ship.name}`, shipHudTexture, scene!);
-  hud.material = hudMaterial;
-
-  const ring = createSelectionRing(scene!, ship, RG_WATER);
-  ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y, RING_Z));
-
-  mesh.metadata = ship;
-  mesh.isPickable = true;
-  if (shipSelection) bindShipSelection(scene!, mesh, ship, shipSelection, { onMove: moveSelection });
-
-  const visual: ShipVisual = {
-    mesh,
-    material,
-    texture,
-    hud,
-    hudMaterial,
-    hudTexture: shipHudTexture,
-    ring,
-    lastHp: -1,
-    lastState: "normal",
-    lastAlive: true,
-    lastRecoil: -1,
-    shipSize,
-  };
-  paintShipHud(toCanvas2D(shipHudTexture), ship, hudWidth, hudHeight);
-  shipHudTexture.update();
-  return visual;
-}
-
 function syncShips(game: GameState) {
   // 死亡或重开后被替换的舰船不再保留在选择列表里
   shipSelection?.retain(game.ships);
@@ -155,7 +84,8 @@ function syncShips(game: GameState) {
     seen.add(ship);
     let visual = shipVisuals.get(ship);
     if (!visual) {
-      visual = createShipVisual(ship);
+      visual = createShipVisual(ship, scene!, 1);
+      if (shipSelection) bindShipSelection(scene!, visual.mesh, ship, shipSelection, { onMove: moveSelection });
       shipVisuals.set(ship, visual);
     }
 

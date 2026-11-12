@@ -129,5 +129,3 @@ export function paintParticle(ctx: CanvasRenderingContext2D, width: number, heig
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 }
-
-

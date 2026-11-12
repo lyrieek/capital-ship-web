@@ -96,7 +96,7 @@ export function paintCannonTurret(
 function drawTorpedoLauncher(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   ctx.fillStyle = "#7a8b99";
   ctx.beginPath();
-  const roundRect = (ctx as any).roundRect;
+  const roundRect = (ctx as CanvasRenderingContext2D & { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect;
   if (typeof roundRect === "function") {
     roundRect.call(ctx, width * 0.46, height * 0.42, width * 0.38, height * 0.16, 6);
   } else {

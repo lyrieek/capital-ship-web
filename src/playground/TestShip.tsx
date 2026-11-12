@@ -1,47 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { DynamicTexture, type Scene, type Mesh, type StandardMaterial } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { createOceanSurface } from "../expanse";
 import { ShipImpl } from "../ship/index";
 import type { Ship, ShipConfig } from "../ship/ship";
-import { paintShip, paintShipHud } from "../game/textures";
+import { paintShipHud } from "../game/textures";
 import { H, P, W, approachAngle } from "../game/utils";
 import { issueSelectionSail, updateSailOrder } from "../game/movement";
-import { bindAttackKey, bindOceanSelection, bindShipSelection, createSelectionRing, ShipSelection, type SelectionRing } from "../game/selection";
-import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
+import { bindAttackKey, bindOceanSelection, bindShipSelection, ShipSelection } from "../game/selection";
+import { createBabylonScene, toCanvas2D, worldToScene } from "../babylon";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
+import { createShipVisual, type ShipVisual, SHIP_Z, HUD_Z, RING_Z, HUD_W, HUD_H } from "../ship/render-visual";
 import "./playground.css";
 import "./TestShip.css";
 
-// 渲染分组：海面 / 选中圈在最底层，舰船与 HUD 依次叠加
+// 渲染分组：海面在最底层
 const RG_OCEAN = 0;
-const RG_SHIP = 1;
-const RG_HUD = 2;
-
-// 舰船贴图的 Z 偏移：靠近相机一侧，保证点击时优先选中舰船而不是海面
-const SHIP_Z = -1;
-const HUD_Z = -2;
-// 选中圈贴在海面之上、舰船之下
-const RING_Z = -0.5;
-
-// 舰船贴图放大倍率（矢量绘制，放大后更清晰）
-const SHIP_TEX_SCALE = 2;
-// 单艘舰船的 HUD 贴图基础尺寸（世界单位 / 像素），随 shipSize 缩放
-const HUD_W = 160;
-const HUD_H = 56;
-
-interface ShipVisual {
-  mesh: Mesh;
-  material: StandardMaterial;
-  texture: DynamicTexture;
-  hud: Mesh;
-  hudTexture: DynamicTexture;
-  ring: SelectionRing;
-  lastHp: number;
-  lastState: Ship["state"];
-  lastAlive: boolean;
-  shipSize: number;
-}
+// 创建一艘调试用舰船
 const createShip = (team: "red" | "blue", name: string, x: number, y: number, dir: 1 | -1): Ship => {
   const cfg: ShipConfig = {
     x,
@@ -64,45 +38,6 @@ const createShips = (): Ship[] => [
   createShip("blue", "蓝-1", 700, 360, -1),
   createShip("blue", "蓝-2", 620, 480, 1),
 ];
-
-// 舰船本体 + 头顶 HUD，贴图复用游戏内同一套绘制函数；shipSize 缩放舰船与 HUD 尺寸，默认 1
-function createShipVisual(ship: Ship, scene: Scene, shipSize = 1): ShipVisual {
-  const scale = SHIP_TEX_SCALE * shipSize;
-  const texture = new DynamicTexture(`shipTexture_${ship.name}`, { width: ship.len * scale, height: ship.wid * scale }, scene, true);
-  paintShip(toCanvas2D(texture), ship, scale);
-  texture.update();
-
-  const mesh = createPlane(`ship_${ship.name}`, ship.len * shipSize, ship.wid * shipSize, scene, RG_SHIP);
-  mesh.material = createSpriteMaterial(`shipMaterial_${ship.name}`, texture, scene);
-  mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
-  mesh.metadata = ship;
-  mesh.isPickable = true;
-
-  const hudWidth = HUD_W * shipSize;
-  const hudHeight = HUD_H * shipSize;
-  const hudTexture = new DynamicTexture(`shipHudTexture_${ship.name}`, { width: hudWidth, height: hudHeight }, scene, true);
-  paintShipHud(toCanvas2D(hudTexture), ship, hudWidth, hudHeight);
-  hudTexture.update();
-
-  const hud = createPlane(`shipHud_${ship.name}`, hudWidth, hudHeight, scene, RG_HUD);
-  hud.material = createSpriteMaterial(`shipHudMaterial_${ship.name}`, hudTexture, scene);
-
-  const ring = createSelectionRing(scene, ship, RG_OCEAN);
-  ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y, RING_Z));
-
-  return {
-    mesh,
-    material: mesh.material as StandardMaterial,
-    texture,
-    hud,
-    hudTexture,
-    ring,
-    lastHp: -1,
-    lastState: "normal",
-    lastAlive: true,
-    shipSize,
-  };
-}
 
 // 把舰船状态同步到 Babylon 可视对象（位置 / 朝向 / 命中闪白 / 血条）
 function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean): void {
@@ -158,10 +93,12 @@ function stepShip(ship: Ship, dt: number): void {
 function demoAttack(ships: readonly Ship[], selection: ShipSelection, mouse: { x: number; y: number } | null): void {
   if (!mouse) return;
 
+  // 选中的每艘存活舰船都加后坐力
   for (const ship of selection.list) {
     if (ship.alive) ship.recoil = 1;
   }
 
+  // 在鼠标位置附近寻找最近的存活敌舰作为攻击目标
   let target: Ship | null = null;
   let nearest = Number.POSITIVE_INFINITY;
   for (const candidate of ships) {
@@ -173,13 +110,15 @@ function demoAttack(ships: readonly Ship[], selection: ShipSelection, mouse: { x
     }
   }
 
+  // 距离足够近时造成伤害与闪白
   if (target && nearest < 150 ** 2) {
     target.takeDamage(20);
     target.hitFlash = 1;
   }
 }
 
-// 场景、ActionManager 与渲染循环
+// 场景、ActionManager 与渲染循环：负责创建 Babylon 场景、海面、舰船可视对象，
+// 并驱动每帧的状态同步与渲染；返回当前帧率供外部显示。
 function useShipScene(
   canvasRef: RefObject<HTMLCanvasElement | null>,
   shipsRef: RefObject<Ship[]>,
@@ -190,12 +129,14 @@ function useShipScene(
 ): number {
   const timeRef = useRef(0);
   const [fps, setFps] = useState(0);
+  // 鼠标在世界坐标中的位置，供 F 键开火瞄准
   const mouseRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // 创建 Babylon 引擎与正交相机场景
     const babylon = createBabylonScene({
       canvas,
       clearColor: [0.04, 0.17, 0.27, 1],
@@ -204,6 +145,7 @@ function useShipScene(
     });
     const scene = babylon.scene;
 
+    // 创建海面
     const oceanSurface = createOceanSurface({
       scene,
       kind: "shallow",
@@ -218,13 +160,16 @@ function useShipScene(
 
     shipsRef.current = createShips();
     for (const ship of shipsRef.current) {
+      // 创建舰船本体 + 头顶 HUD + 选中圈
       const visual = createShipVisual(ship, scene, shipSize);
       visualsRef.current.set(ship, visual);
       bindShipSelection(scene, visual.mesh, ship, selection, { onMove: moveSelected });
     }
     bindOceanSelection(scene, oceanSurface.mesh, selection, { onMove: moveSelected });
+    // F 键：选中的舰船向鼠标位置开火
     bindAttackKey(scene, () => demoAttack(shipsRef.current, selection, mouseRef.current));
 
+    // 将屏幕坐标转换为游戏世界坐标
     const toWorld = (event: MouseEvent): { x: number; y: number } | null => {
       const rect = canvas.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return null;
@@ -234,6 +179,7 @@ function useShipScene(
       };
     };
 
+    // 鼠标移动时更新鼠标世界坐标
     const handleMove = (event: MouseEvent) => {
       const point = toWorld(event);
       if (point) mouseRef.current = point;
@@ -275,6 +221,8 @@ function useShipScene(
   return fps;
 }
 
+// 调试页的公共控制器：维护舰船列表、可视对象、选择状态；
+// shipSize 可从外部传入，用于缩放舰船与 HUD 尺寸。
 function useShipDebug(canvasRef: RefObject<HTMLCanvasElement | null>, shipSize = 1) {
   const shipsRef = useRef<Ship[]>([]);
   const visualsRef = useRef<Map<Ship, ShipVisual>>(new Map());
@@ -297,6 +245,7 @@ function useShipDebug(canvasRef: RefObject<HTMLCanvasElement | null>, shipSize =
 export default function TestShip() {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // 舰船与 HUD 缩放比例，默认 1，可在控制面板调节
   const [shipSize, setShipSize] = useState(1);
   const { fps, selectedCount, clearSelection } = useShipDebug(canvasRef, shipSize);
 
@@ -306,11 +255,11 @@ export default function TestShip() {
         <section className="playground-controls">
           <h2>{t("ship.title")}</h2>
           <p>{t("ship.hint")}</p>
-          <button type="button" onClick={clearSelection}>
+          <button type="button" disabled={selectedCount === 0} onClick={clearSelection}>
             {t("ship.clearSelection")}
           </button>
           <label className="playground-field">
-            <span>shipSize</span>
+            <span>{t("ship.shipSize")}</span>
             <input type="number" min="0.1" step="0.1" value={shipSize} onChange={(e) => setShipSize(Math.max(0.1, Number(e.target.value || 1)))} />
           </label>
           <p>

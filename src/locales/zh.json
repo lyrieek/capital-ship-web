@@ -52,6 +52,7 @@
     "hint": "左键点击舰船进行选择（按住 Shift 可多选），右键让选中舰船转向航行过去，按 F 键攻击最近的敌舰。",
     "clearSelection": "清除选择",
     "selected": "选中舰船",
+    "shipSize": "缩放比例",
     "fps": "帧率"
   },
   "weapons": {
