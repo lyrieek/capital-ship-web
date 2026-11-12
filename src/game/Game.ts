@@ -3,14 +3,12 @@ import type { GameState, ParticleItem } from "./types";
 import { ShipImpl } from "../ship/index";
 import type { Ship } from "../ship/ship";
 import { renderGame } from "./render";
-import { H, W, P, rand } from "./utils";
+import { H, W, P } from "./utils";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
 import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
 
 const TAU = Math.PI * 2;
 
-const SHELL = getWeaponSpec("shell");
-const TORPEDO = getWeaponSpec("torp");
 // 手动齐射（F 键）的公共冷却，避免连续按键无限输出
 const MANUAL_FIRE_COOLDOWN = 2.5;
 
@@ -97,32 +95,16 @@ export function initializeGame(): GameState {
     focusFireAt(ships: readonly Ship[], x: number, y: number): void {
       if (this.over || this.manualFireCD > 0) return;
 
-      let anyFired = false;
+      const point = { x, y };
+      let anyOrdered = false;
       for (const ship of ships) {
         if (!ship.alive) continue;
-
-        // 手动齐射向指定世界点开火（默认对准鼠标位置），炮管随即转向该点
-        ship.aimAngle = Math.atan2(y - ship.y, x - ship.x);
-
-        let fired = false;
-        if (ship.gunCD <= 0) {
-          this.fireShellAt(ship, x, y);
-          ship.gunCD = rand(SHELL.cooldownMin, SHELL.cooldownMax);
-          fired = true;
-        }
-        if (ship.torpCD <= 0) {
-          this.fireTorpedoAt(ship, x, y);
-          ship.torpCD = rand(TORPEDO.cooldownMin, TORPEDO.cooldownMax);
-          fired = true;
-        }
-
-        if (fired) {
-          ship.recoil = 1;
-          anyFired = true;
-        }
+        // 只下达瞄准指令：炮管会先慢慢转向该点，对准后才真正开火
+        ship.aimOrder = point;
+        anyOrdered = true;
       }
 
-      if (anyFired) this.manualFireCD = MANUAL_FIRE_COOLDOWN;
+      if (anyOrdered) this.manualFireCD = MANUAL_FIRE_COOLDOWN;
     },
 
     // 向世界坐标点开火主炮（不预测目标，直取给定点）

@@ -68,6 +68,8 @@ export interface Ship extends ShipConfig {
   recoil: number;
   // 主炮当前瞄准角度（朝向目标，平滑转向）
   aimAngle: number;
+  // 手动指定的射击点：炮管先转向该点，对准后才开火；null 表示没有手动指令
+  aimOrder: SailOrder | null;
 
   // 是否存活（hp>0）
   get alive(): boolean;

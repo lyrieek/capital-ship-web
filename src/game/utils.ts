@@ -11,6 +11,9 @@ export interface GameConfig {
   // 转弯速度（弧度/秒）
   turnRate: number;
 
+  // 炮管转向目标的速度（弧度/秒），应明显慢于舰体转向
+  turretTurnRate: number;
+
   // 规避阶段持续时间（秒）
   dodgeDuration: number;
 
@@ -47,6 +50,8 @@ export const P: GameConfig = {
   normalFactor: 0.5,
   dodgeFactor: 1.0,
   turnRate: (85 * Math.PI) / 180,
+  // 炮管转动明显慢于舰体，避免瞬间对准
+  turretTurnRate: (38 * Math.PI) / 180,
   dodgeDuration: 1.15,
   recoverDuration: 1.3,
   dodgeSideDist: 70,

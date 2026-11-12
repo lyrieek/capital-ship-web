@@ -8,6 +8,9 @@ import { getWeaponSpec, withinRange } from "../weapons";
 const CANNON = getWeaponSpec("shell");
 const TORPEDO = getWeaponSpec("torp");
 
+// 炮口与目标方向的夹角小于该值（约 3.4°）才允许开火
+const AIM_TOLERANCE = 0.06;
+
 export class ShipImpl implements Ship {
   x: number;
   y: number;
@@ -38,6 +41,7 @@ export class ShipImpl implements Ship {
   hitFlash: number;
   recoil: number;
   aimAngle: number;
+  aimOrder: SailOrder | null;
 
   constructor(cfg: ShipConfig) {
     this.x = cfg.x;
@@ -72,6 +76,7 @@ export class ShipImpl implements Ship {
     this.hitFlash = 0;
     this.recoil = 0;
     this.aimAngle = this.baseAngle;
+    this.aimOrder = null;
   }
 
   get alive() {
@@ -237,38 +242,86 @@ export class ShipImpl implements Ship {
     }
 
     // 处理武器发射
-    const e = this.findTarget();
-    if (e) {
-      const aim = Math.atan2(e.y - this.y, e.x - this.x);
-      this.aimAngle = approachAngle(this.aimAngle, aim, P.turnRate * dt);
+    this.updateWeapons(dt);
+  }
 
-      const rate = this.state === "normal" ? 1 : P.firePenalty;
+  // 炮管对准指定角度才算瞄准完成
+  private isAimedAt(aim: number): boolean {
+    return Math.abs(angleDiff(this.aimAngle, aim)) <= AIM_TOLERANCE;
+  }
 
-      // 主炮冷却和发射（超出射程不发射，等目标进入射程）
-      this.gunCD -= dt * rate;
-      if (this.gunCD <= 0 && withinRange(this, e, CANNON.range)) {
-        this.gunCD = rand(CANNON.cooldownMin, CANNON.cooldownMax);
-        const game = getGameInstance();
-        if (game) {
-          game.fireShell(this, e);
-          this.recoil = 1;
-        }
-      }
+  // 炮管以固定转速转向目标，不会瞬间跳转
+  private turnTurretToward(aim: number, dt: number, rateScale = 1): void {
+    this.aimAngle = approachAngle(this.aimAngle, aim, P.turretTurnRate * dt * rateScale);
+  }
 
-      // 鱼雷冷却和发射（低频齐射，一次 3~5 发）
-      this.torpCD -= dt * rate;
-      if (this.torpCD <= 0 && withinRange(this, e, TORPEDO.range)) {
-        this.torpCD = rand(TORPEDO.cooldownMin, TORPEDO.cooldownMax);
-        const game = getGameInstance();
-        if (game) {
-          game.fireTorpedo(this, e);
-          this.recoil = 1;
-        }
-      } else {
-        // 无目标时炮口慢慢转回航向
-        this.aimAngle = approachAngle(this.aimAngle, this.baseAngle, P.turnRate * dt * 0.5);
-      }
+  // 手动指定点：所有炮都对准后才开火；冷却中则保持瞄准继续等待
+  private fireManualVolley(point: SailOrder): void {
+    if (this.gunCD > 0 && this.torpCD > 0) return;
+
+    const game = getGameInstance();
+    if (!game) return;
+
+    let fired = false;
+    if (this.gunCD <= 0) {
+      this.gunCD = rand(CANNON.cooldownMin, CANNON.cooldownMax);
+      game.fireShellAt(this, point.x, point.y);
+      fired = true;
     }
+    if (this.torpCD <= 0) {
+      this.torpCD = rand(TORPEDO.cooldownMin, TORPEDO.cooldownMax);
+      game.fireTorpedoAt(this, point.x, point.y);
+      fired = true;
+    }
+    if (fired) {
+      this.recoil = 1;
+      this.aimOrder = null;
+    }
+  }
+
+  // 自动交战：炮管先慢慢转向最近目标，对准并且在射程内才开火
+  private fireAtTarget(target: Ship, aim: number): void {
+    if (!this.isAimedAt(aim)) return;
+
+    const game = getGameInstance();
+    if (!game) return;
+
+    if (this.gunCD <= 0 && withinRange(this, target, CANNON.range)) {
+      this.gunCD = rand(CANNON.cooldownMin, CANNON.cooldownMax);
+      game.fireShell(this, target);
+      this.recoil = 1;
+    }
+    if (this.torpCD <= 0 && withinRange(this, target, TORPEDO.range)) {
+      this.torpCD = rand(TORPEDO.cooldownMin, TORPEDO.cooldownMax);
+      game.fireTorpedo(this, target);
+      this.recoil = 1;
+    }
+  }
+
+  private updateWeapons(dt: number): void {
+    const rate = this.state === "normal" ? 1 : P.firePenalty;
+    this.gunCD -= dt * rate;
+    this.torpCD -= dt * rate;
+
+    // 手动射击指令优先于自动交战
+    if (this.aimOrder) {
+      const order = this.aimOrder;
+      const aim = Math.atan2(order.y - this.y, order.x - this.x);
+      this.turnTurretToward(aim, dt);
+      if (this.isAimedAt(aim)) this.fireManualVolley(order);
+      return;
+    }
+
+    const target = this.findTarget();
+    if (!target) {
+      // 没有目标时炮口慢慢转回航向
+      this.turnTurretToward(this.baseAngle, dt, 0.5);
+      return;
+    }
+
+    const aim = Math.atan2(target.y - this.y, target.x - this.x);
+    this.turnTurretToward(aim, dt);
+    this.fireAtTarget(target, aim);
   }
 
   takeDamage(dmg: number): void {

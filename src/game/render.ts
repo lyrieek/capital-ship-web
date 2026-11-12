@@ -1,7 +1,7 @@
 // Babylon.js 渲染层：把 2D 海战状态同步到「正交俯视」场景
 // 相机固定在 -Z 方向俯视 XY 平面，世界单位与游戏像素坐标一一对应。
 // 后续还需优化 舰船/炮弹/粒子改为共享图集的 InstancedMesh/thin instance
-import { Color3, DynamicTexture, Vector3, type Engine, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
+import { Color3, DynamicTexture, type Engine, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
 import { paintParticle, paintShip, paintShipHud } from "./textures";
 import { createOceanSurface, getOceanKind, type OceanSurface } from "../expanse";
 import { createWeaponRender, type WeaponRender } from "../weapons";
@@ -13,6 +13,7 @@ import { issueSelectionSail } from "./movement";
 import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
 import {
   createShipVisual,
+  disposeNavLine,
   type ShipVisual,
   SHIP_Z,
   HUD_Z,
@@ -55,6 +56,15 @@ function moveSelection(x: number, y: number): void {
 
 // 每艘舰船对应的可视对象（reset 会重建舰船，故按对象身份做增删）
 const shipVisuals = new Map<Ship, ShipVisual>();
+
+// 炮管转动 / 舰体转向需要重绘舰船贴图；变化太小时跳过，避免每帧都重绘
+const REPAINT_STEP = 0.02;
+function angleMoved(current: number, last: number): boolean {
+  return Math.abs(Math.atan2(Math.sin(current - last), Math.cos(current - last))) > REPAINT_STEP;
+}
+function turretNeedsRepaint(ship: Ship, visual: ShipVisual): boolean {
+  return angleMoved(ship.aimAngle, visual.lastAim) || angleMoved(ship.angle, visual.lastAngle);
+}
 
 // 粒子使用对象池复用 Mesh，避免频繁创建销毁
 const particlePool: PlaneMesh[] = [];
@@ -108,17 +118,12 @@ function syncShips(game: GameState) {
     // 航行导航虚线：仅选中且有航行目标时显示，每帧重新计算不残留旧点
     if (shipSelection?.has(ship)) {
       updateShipNavigationLine(visual, ship, scene!);
-    } else if (visual.line) {
-      visual.line.dispose();
-      visual.line = null;
+    } else {
+      disposeNavLine(visual);
     }
 
     visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
     visual.mesh.rotation.z = -ship.angle;
-
-    // 后坐力：开火时舰体沿反航向方向微向后踢
-    const kick = ship.recoil * 10;
-    visual.mesh.position.addInPlace(new Vector3(-Math.cos(ship.angle) * kick, -Math.sin(ship.angle) * kick, 0));
     visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y, RING_Z));
 
     const flash = 1 + ship.hitFlash * 0.9;
@@ -126,7 +131,13 @@ function syncShips(game: GameState) {
 
     visual.hud.position.copyFrom(worldToScene(ship.x, ship.y - (ship.wid / 2 + 20) * visual.shipSize, HUD_Z));
 
-    if (visual.lastHp !== ship.hp || visual.lastState !== ship.state || visual.lastAlive !== alive || visual.lastRecoil !== ship.recoil) {
+    if (
+      visual.lastHp !== ship.hp ||
+      visual.lastState !== ship.state ||
+      visual.lastAlive !== alive ||
+      visual.lastRecoil !== ship.recoil ||
+      turretNeedsRepaint(ship, visual)
+    ) {
       const hudWidth = HUD_W * visual.shipSize;
       const hudHeight = HUD_H * visual.shipSize;
       paintShip(toCanvas2D(visual.texture), ship, SHIP_TEX_SCALE * visual.shipSize);
@@ -137,6 +148,8 @@ function syncShips(game: GameState) {
       visual.lastState = ship.state;
       visual.lastAlive = alive;
       visual.lastRecoil = ship.recoil;
+      visual.lastAim = ship.aimAngle;
+      visual.lastAngle = ship.angle;
     }
   }
 
@@ -147,7 +160,8 @@ function syncShips(game: GameState) {
     visual.ring.dispose();
     visual.texture.dispose();
     visual.hudTexture.dispose();
-    visual.line?.dispose();
+    disposeNavLine(visual);
+    visual.lineMaterial.dispose();
     shipVisuals.delete(ship);
   }
 }

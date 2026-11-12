@@ -10,7 +10,17 @@ import { issueSelectionSail, updateSailOrder } from "../game/movement";
 import { bindAttackKey, bindOceanSelection, bindShipSelection, ShipSelection } from "../game/selection";
 import { createBabylonScene, toCanvas2D, worldToScene } from "../babylon";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
-import { createShipVisual, type ShipVisual, SHIP_Z, HUD_Z, RING_Z, HUD_W, HUD_H, updateShipNavigationLine } from "../ship/render-visual";
+import {
+  createShipVisual,
+  disposeNavLine,
+  type ShipVisual,
+  SHIP_Z,
+  HUD_Z,
+  RING_Z,
+  HUD_W,
+  HUD_H,
+  updateShipNavigationLine,
+} from "../ship/render-visual";
 import "./playground.css";
 import "./TestShip.css";
 
@@ -51,9 +61,8 @@ function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean, scene
   // 航行导航虚线：仅选中且有航行目标时显示，每帧重新计算不残留旧点
   if (selected) {
     updateShipNavigationLine(visual, ship, scene);
-  } else if (visual.line) {
-    visual.line.dispose();
-    visual.line = null;
+  } else {
+    disposeNavLine(visual);
   }
 
   visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));

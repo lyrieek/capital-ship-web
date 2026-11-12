@@ -5,6 +5,10 @@ import type { Ship } from "../ship/ship";
 // 海水（海浪）的绘制已抽离到 src/expanse/ocean.ts
 // 炮弹 / 鱼雷的绘制已抽离到 src/weapons/cannon.ts、src/weapons/torpedo.ts
 
+// 舰船贴图上下额外的透明留白（世界单位，单侧）。
+// 炮塔绘制在贴图内部，炮管转到接近垂直时需要这段空间，否则会被纹理边界裁掉。
+export const SHIP_TEX_PAD = 9;
+
 /**
  * 绘制舰船贴图
  * TODO: 炮塔/开火朝向、甲板投影等细节（命中闪白已在同步时用自发光增亮实现）
@@ -27,13 +31,15 @@ function paintCannon(
 export function paintShip(ctx: CanvasRenderingContext2D, ship: Ship, scale: number): void {
   const length = ship.len * scale;
   const width = ship.wid * scale;
+  // 贴图上下留白：炮管转到垂直方向时不会被纹理边界截断
+  const height = width + 2 * SHIP_TEX_PAD * scale;
   const bow = 26 * scale;
   const recoil = ship.recoil;
 
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
   ctx.save();
-  ctx.translate(length / 2, width / 2);
+  ctx.translate(length / 2, height / 2);
 
   const points: [number, number][] = [
     [-length / 2, -width / 2],
@@ -65,23 +71,18 @@ export function paintShip(ctx: CanvasRenderingContext2D, ship: Ship, scale: numb
   ctx.fillRect(-24 * scale, -width / 2 + 2 * scale, 6 * scale, width - 4 * scale);
 
   // ===== 主炮：舰首 1 门，随 aimAngle 转向目标 =====
-  const turretR = 16 * scale;
-  const turretBarrel = 36 * scale;
+  // aimAngle 是世界角度；贴图随舰体一起旋转，因此要减去舰体朝向换算成局部角度
+  const turretR = 9 * scale;
+  const turretBarrel = 21 * scale;
   const turretX = length / 2 - bow - turretR * 0.6;
-  paintCannon(ctx, turretX, 0, ship.aimAngle, turretR, turretBarrel, ship.light, ship.dark, recoil);
+  const turretAngle = ship.aimAngle - ship.angle;
+  paintCannon(ctx, turretX, 0, turretAngle, turretR, turretBarrel, ship.light, ship.dark, recoil);
 
-  // ===== 副炮：舰尾 1 门（固定朝后），舷侧各 1 门小炮（固定朝外） =====
-  const rearR = 11 * scale;
-  const rearBarrel = 24 * scale;
-  const rearX = -length / 2 + bow + rearR * 0.6;
+  // ===== 尾部主炮：固定朝后，只保留 1 门 =====
+  const rearR = 6.5 * scale;
+  const rearBarrel = 15 * scale;
+  const rearX = -length / 2 + bow + rearR * 0.7;
   paintCannon(ctx, rearX, 0, Math.PI, rearR, rearBarrel, ship.light, ship.dark, recoil * 0.5);
-
-  const sideR = 6 * scale;
-  const sideBarrel = 14 * scale;
-  const sideY = width / 2 - sideR * 2.2;
-  const sideX = -length / 2 + 30 * scale;
-  paintCannon(ctx, sideX, -sideY, -Math.PI / 2, sideR, sideBarrel, ship.light, ship.dark, recoil * 0.4);
-  paintCannon(ctx, sideX, sideY, Math.PI / 2, sideR, sideBarrel, ship.light, ship.dark, recoil * 0.4);
 
   ctx.restore();
 }
