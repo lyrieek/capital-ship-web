@@ -16,6 +16,8 @@ export default function TestHub() {
   const [sceneVersion, setSceneVersion] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [winnerTeam, setWinnerTeam] = useState<"red" | "blue" | null>(null);
+  // 是否显示 2 倍速按钮（默认开启，当前游戏已开启 2 倍速）
+  const [allow2x, setAllow2x] = useState(true);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -78,10 +80,14 @@ export default function TestHub() {
           >
             {t("playground.reset")}
           </button>
+          <label>
+            <input type="checkbox" checked={allow2x} onChange={(e) => setAllow2x(e.target.checked)} />
+            {t("playground.allow2x")}
+          </label>
         </section>
         <section className="playground-preview">
           <canvas ref={canvasRef} className="playground-canvas" width={1600} height={900} />
-          {scene ? <Hud key={sceneVersion} scene={scene} /> : null}
+          {scene ? <Hud key={sceneVersion} scene={scene} allow2x={allow2x} /> : null}
           <Model
             scene={scene}
             open={gameOver}

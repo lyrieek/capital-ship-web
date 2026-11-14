@@ -23,7 +23,9 @@
     "winnerNone": "无",
     "winnerRed": "红方",
     "winnerBlue": "蓝方",
-    "reset": "重置"
+    "reset": "重置",
+    "allow2x": "是否显示 2 倍速的按钮",
+    "speed2x": "2 倍速"
   },
   "expanse": {
     "title": "海洋调试",

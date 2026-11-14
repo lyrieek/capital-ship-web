@@ -129,7 +129,7 @@ export default function Model({
     footer.horizontalAlignment = StackPanel.HORIZONTAL_ALIGNMENT_CENTER;
     footer.spacing = 12;
     footer.height = "40px";
-    titleBlock.paddingBottom = "6px";
+    footer.paddingBottom = "8px";
     footer.adaptWidthToChildren = true;
     stack.addControl(footer);
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Scene } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
-import { getGameInstance, initializeGame, resetGame } from "../game/Game";
+import { getGameInstance, initializeGame, resetGame, getGameSpeedMultiplier } from "../game/Game";
 import { disposeRender, getShipSelection, initRender, renderGame } from "../game/render";
 import { bindAttackKey } from "../game/selection";
 import { W, H } from "../game/utils";
@@ -67,7 +67,7 @@ export default function BattleCanvas() {
       const now = performance.now();
       let dt = (now - last) / 1000;
       last = now;
-      dt = Math.min(dt, 0.05);
+      dt = Math.min(dt, 0.05) * getGameSpeedMultiplier();
 
       const game = getGameInstance();
       if (!game) return;
@@ -110,7 +110,7 @@ export default function BattleCanvas() {
   return (
     <>
       <canvas ref={canvasRef} id="c" />
-      {scene ? <Hud key={sceneVersion} scene={scene} /> : null}
+      {scene ? <Hud key={sceneVersion} scene={scene} allow2x={true} /> : null}
       <Model
         scene={scene}
         open={gameOver}

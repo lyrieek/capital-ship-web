@@ -57,6 +57,26 @@ export function getGameInstance(): GameState | null {
   return gameInstance;
 }
 
+// 当前倍速：1 或 2，由 [2x] 按钮切换（默认游戏已开启 2 倍速）
+let gameSpeed = 2;
+
+export function getGameSpeed(): number {
+  return gameSpeed;
+}
+
+export function setGameSpeed(speed: number): void {
+  gameSpeed = speed;
+}
+
+export function getGameSpeedMultiplier(): number {
+  return gameSpeed;
+}
+
+export function toggleGameSpeed(): number {
+  gameSpeed = gameSpeed === 1 ? 2 : 1;
+  return gameSpeed;
+}
+
 const mkShip = (team: "red" | "blue", name: string, x: number, y: number, dir: 1 | -1, minX: number, maxX: number, light: string, dark: string) =>
   new ShipImpl({ team, name, x, y, baseY: y, dir, minX, maxX, light, dark });
 

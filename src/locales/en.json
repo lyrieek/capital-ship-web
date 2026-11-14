@@ -23,7 +23,9 @@
     "winnerNone": "No Winner",
     "winnerRed": "Red",
     "winnerBlue": "Blue",
-    "reset": "Reset"
+    "reset": "Reset",
+    "allow2x": "Whether to show the 2x speed button",
+    "speed2x": "2x Speed"
   },
   "expanse": {
     "title": "Ocean Debug",

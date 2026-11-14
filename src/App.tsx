@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Route, Routes, NavLink } from "react-router-dom";
 import LanguageSwitcher from "./components/LanguageSwitcher";
 import BattleCanvas from "./components/BattleCanvas";
-import TestHub from "./playground/TestHub";
+import TestHub from "./playground/TestHud";
 import TestExpanse from "./playground/TestExpanse";
 import TestWeapons from "./playground/TestWeapons";
 import TestShip from "./playground/TestShip";
