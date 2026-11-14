@@ -13,7 +13,8 @@
     "winnerRed": "Red Victory",
     "winnerBlue": "Blue Victory",
     "winnerDraw": "Mutual Destruction",
-    "restartHint": "Click to restart"
+    "restartPrompt": "Start a new battle?",
+    "restartButton": "Restart"
   },
   "playground": {
     "controls": "Controls",

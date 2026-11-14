@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Engine, Scene } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import Hud from "../components/Hud";
+import Model from "../components/Model";
 import { createBabylonScene } from "../babylon";
 import "./playground.css";
 
@@ -80,7 +81,15 @@ export default function TestHub() {
         </section>
         <section className="playground-preview">
           <canvas ref={canvasRef} className="playground-canvas" width={1600} height={900} />
-          {scene ? <Hud key={sceneVersion} scene={scene} gameOver={gameOver} winnerTeam={winnerTeam} onRestart={() => setGameOver(false)} /> : null}
+          {scene ? <Hud key={sceneVersion} scene={scene} /> : null}
+          <Model
+            scene={scene}
+            open={gameOver}
+            title={winnerTeam === "red" ? t("hud.winnerRed") : winnerTeam === "blue" ? t("hud.winnerBlue") : t("hud.winnerDraw")}
+            message={t("hud.restartPrompt")}
+            titleColor={winnerTeam === "red" ? "#ff7b6b" : winnerTeam === "blue" ? "#7cc4ff" : "#cfe3f5"}
+            actions={[{ label: t("hud.restartButton"), onClick: () => setGameOver(false) }]}
+          />
         </section>
       </div>
     </div>

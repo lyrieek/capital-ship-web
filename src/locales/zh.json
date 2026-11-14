@@ -13,7 +13,8 @@
     "winnerRed": "红方胜利",
     "winnerBlue": "蓝方胜利",
     "winnerDraw": "同归于尽",
-    "restartHint": "点击画面重新开始"
+    "restartPrompt": "是否重新开始新的战斗？",
+    "restartButton": "重新开始"
   },
   "playground": {
     "controls": "控制面板",

@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Scene } from "@babylonjs/core";
+import { useTranslation } from "react-i18next";
 import { getGameInstance, initializeGame, resetGame } from "../game/Game";
 import { disposeRender, getShipSelection, initRender, renderGame } from "../game/render";
 import { bindAttackKey } from "../game/selection";
 import { W, H } from "../game/utils";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
 import Hud from "./Hud";
+import Model from "./Model";
 
 // 2D 海战 Babylon.js 渲染容器（尺寸由 App.css 的 .map-section canvas 控制）
 export default function BattleCanvas() {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<Scene | null>(null);
   const [sceneVersion, setSceneVersion] = useState(0);
@@ -83,16 +86,8 @@ export default function BattleCanvas() {
     const handleResize = () => engine.resize();
     window.addEventListener("resize", handleResize);
 
-    const handleClick = () => {
-      const game = getGameInstance();
-      if (game && game.over) resetGame();
-    };
-    canvas.addEventListener("click", handleClick);
-    canvas.addEventListener("mousemove", handleMove);
-
     return () => {
       window.removeEventListener("resize", handleResize);
-      canvas.removeEventListener("click", handleClick);
       canvas.removeEventListener("mousemove", handleMove);
       engine.stopRenderLoop();
       disposeRender();
@@ -110,11 +105,20 @@ export default function BattleCanvas() {
   }, []);
 
   const scene = sceneRef.current;
+  const winnerText = winnerTeam === "red" ? t("hud.winnerRed") : winnerTeam === "blue" ? t("hud.winnerBlue") : t("hud.winnerDraw");
 
   return (
     <>
       <canvas ref={canvasRef} id="c" />
-      {scene ? <Hud key={sceneVersion} scene={scene} gameOver={gameOver} winnerTeam={winnerTeam} onRestart={handleRestart} /> : null}
+      {scene ? <Hud key={sceneVersion} scene={scene} /> : null}
+      <Model
+        scene={scene}
+        open={gameOver}
+        title={winnerText}
+        message={t("hud.restartPrompt")}
+        titleColor={winnerTeam === "red" ? "#ff7b6b" : winnerTeam === "blue" ? "#7cc4ff" : "#cfe3f5"}
+        actions={[{ label: t("hud.restartButton"), onClick: handleRestart }]}
+      />
     </>
   );
 }
