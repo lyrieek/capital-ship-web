@@ -4,30 +4,20 @@ import { useTranslation } from "react-i18next";
 import { createOceanSurface } from "../expanse";
 import { ShipImpl } from "../ship/index";
 import type { Ship, ShipConfig } from "../ship/ship";
-import { paintShipHud } from "../game/textures";
 import { H, P, W, approachAngle } from "../game/utils";
 import { issueSelectionSail, updateSailOrder } from "../game/movement";
 import { bindAttackKey, bindOceanSelection, bindShipSelection, ShipSelection } from "../game/selection";
-import { createBabylonScene, toCanvas2D, worldToScene } from "../babylon";
+import { createBabylonScene, worldToScene } from "../babylon";
+import { createShipHudLayer } from "../ship/hud";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
-import {
-  createShipVisual,
-  disposeNavLine,
-  type ShipVisual,
-  SHIP_Z,
-  HUD_Z,
-  RING_Z,
-  HUD_W,
-  HUD_H,
-  updateShipNavigationLine,
-} from "../ship/render-visual";
+import { createShipVisual, disposeNavLine, type ShipVisual, SHIP_Z, RING_Z, updateShipNavigationLine } from "../ship/render-visual";
 import "./playground.css";
 import "./TestShip.css";
 
 // 渲染分组：海面在最底层
 const RG_OCEAN = 0;
 // 创建一艘调试用舰船
-const createShip = (team: "red" | "blue", name: string, x: number, y: number, dir: 1 | -1): Ship => {
+const createShip = (team: "red" | "blue", name: string, nameKey: string, x: number, y: number, dir: 1 | -1): Ship => {
   const cfg: ShipConfig = {
     x,
     y,
@@ -38,23 +28,24 @@ const createShip = (team: "red" | "blue", name: string, x: number, y: number, di
     light: team === "red" ? "#ff7b6b" : "#7cc4ff",
     dark: team === "red" ? "#b8322a" : "#1d5c9e",
     name,
+    nameKey,
     team,
   };
   return new ShipImpl(cfg);
 };
 
 const createShips = (): Ship[] => [
-  createShip("red", "红-1", 200, 120, 1),
-  createShip("red", "红-2", 280, 240, -1),
-  createShip("blue", "蓝-1", 700, 360, -1),
-  createShip("blue", "蓝-2", 620, 480, 1),
+  createShip("red", "红-1", "shipHud.names.red1", 200, 120, 1),
+  createShip("red", "红-2", "shipHud.names.red2", 280, 240, -1),
+  createShip("blue", "蓝-1", "shipHud.names.blue1", 700, 360, -1),
+  createShip("blue", "蓝-2", "shipHud.names.blue2", 620, 480, 1),
 ];
 
 // 把舰船状态同步到 Babylon 可视对象（位置 / 朝向 / 命中闪白 / 血条）
 function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean, scene: Scene): void {
   const alive = ship.alive;
   visual.mesh.setEnabled(alive);
-  visual.hud.setEnabled(alive);
+  visual.hud.setVisible(alive);
   visual.ring.mesh.setEnabled(alive && selected);
   if (!alive) return;
 
@@ -72,17 +63,7 @@ function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean, scene
   const flash = 1 + ship.hitFlash * 0.9;
   visual.material.emissiveColor.set(flash, flash, flash);
 
-  visual.hud.position.copyFrom(worldToScene(ship.x, ship.y - (ship.wid / 2 + 20) * visual.shipSize, HUD_Z));
-
-  if (visual.lastHp !== ship.hp || visual.lastState !== ship.state || visual.lastAlive !== alive) {
-    const hudWidth = HUD_W * visual.shipSize;
-    const hudHeight = HUD_H * visual.shipSize;
-    paintShipHud(toCanvas2D(visual.hudTexture), ship, hudWidth, hudHeight);
-    visual.hudTexture.update();
-    visual.lastHp = ship.hp;
-    visual.lastState = ship.state;
-    visual.lastAlive = alive;
-  }
+  visual.hud.sync(ship);
 }
 
 // 调试页只演示巡航与右键航行，不触发武器逻辑
@@ -162,6 +143,7 @@ function useShipScene(
       height: H,
     });
     const scene = babylon.scene;
+    const hudLayer = createShipHudLayer(scene, W);
 
     // 创建海面
     const oceanSurface = createOceanSurface({
@@ -179,7 +161,7 @@ function useShipScene(
     shipsRef.current = createShips();
     for (const ship of shipsRef.current) {
       // 创建舰船本体 + 头顶 HUD + 选中圈
-      const visual = createShipVisual(ship, scene, shipSize);
+      const visual = createShipVisual(ship, scene, hudLayer, shipSize);
       visualsRef.current.set(ship, visual);
       bindShipSelection(scene, visual.mesh, ship, selection, { onMove: moveSelected });
     }
@@ -230,6 +212,7 @@ function useShipScene(
 
     return () => {
       canvas.removeEventListener("mousemove", handleMove);
+      hudLayer.dispose();
       babylon.dispose();
       visualsRef.current.clear();
       shipsRef.current = [];

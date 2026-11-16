@@ -87,40 +87,6 @@ export function paintShip(ctx: CanvasRenderingContext2D, ship: Ship, scale: numb
   ctx.restore();
 }
 
-export function paintShipHud(ctx: CanvasRenderingContext2D, ship: Ship, width: number, height: number): void {
-  ctx.clearRect(0, 0, width, height);
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  ctx.font = "600 12px system-ui, sans-serif";
-  ctx.fillStyle = ship.light;
-  ctx.fillText(ship.name, width / 2, 10);
-
-  const barWidth = 76;
-  const barHeight = 7;
-  const barX = (width - barWidth) / 2;
-  const barY = 20;
-
-  ctx.fillStyle = "rgba(0,0,0,.55)";
-  ctx.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
-  ctx.fillStyle = "#22303d";
-  ctx.fillRect(barX, barY, barWidth, barHeight);
-
-  const ratio = ship.hp / ship.maxHp;
-  ctx.fillStyle = ratio > 0.55 ? "#4ade80" : ratio > 0.25 ? "#fbbf24" : "#ef4444";
-  ctx.fillRect(barX, barY, barWidth * ratio, barHeight);
-
-  ctx.strokeStyle = "rgba(255,255,255,.25)";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
-
-  if (ship.state !== "normal") {
-    ctx.font = "10px system-ui, sans-serif";
-    ctx.fillStyle = ship.state === "dodge" ? "#fbbf24" : "#7dd3fc";
-    ctx.fillText(ship.state === "dodge" ? "⚡ 规避转体 · 全速 · 射速减半" : "↩ 回正中 · 全速 · 射速减半", width / 2, 44);
-  }
-}
-
 export function paintParticle(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   ctx.clearRect(0, 0, width, height);
   const gradient = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width / 2);

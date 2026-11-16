@@ -1,9 +1,10 @@
 // 舰船可视对象的创建：主游戏与 playground 共用同一套，避免重复实现。
 // bindShipSelection 由调用方自行绑定，此处只负责 Mesh / 贴图 / 选中圈的创建。
 import { Color3, DynamicTexture, MeshBuilder, StandardMaterial, type Mesh, type Scene } from "@babylonjs/core";
-import { paintShip, paintShipHud, SHIP_TEX_PAD } from "../game/textures";
+import { paintShip, SHIP_TEX_PAD } from "../game/textures";
 import { createSelectionRing, type SelectionRing } from "../game/selection";
 import { createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
+import type { ShipHud, ShipHudLayer } from "./hud";
 import type { Ship } from "./ship";
 
 // 渲染分组：海面在最底层，选中圈与舰船同组（靠 Z 值排在舰船下），HUD 再叠加
@@ -12,24 +13,18 @@ export const RG_HUD = 2;
 
 // 舰船贴图的 Z 偏移：靠近相机一侧，保证点击时优先选中舰船而不是海面
 export const SHIP_Z = -1;
-export const HUD_Z = -2;
 // 选中圈贴在海面之上、舰船之下
 export const RING_Z = -0.5;
 
 // 舰船贴图放大倍率（矢量绘制，放大后更清晰）
 export const SHIP_TEX_SCALE = 2;
-// 单艘舰船的 HUD 贴图基础尺寸（世界单位 / 像素），随 shipSize 缩放
-export const HUD_W = 160;
-export const HUD_H = 56;
 
 // 每艘舰船对应的可视对象
 export interface ShipVisual {
   mesh: Mesh;
   material: StandardMaterial;
   texture: DynamicTexture;
-  hud: Mesh;
-  hudMaterial: StandardMaterial;
-  hudTexture: DynamicTexture;
+  hud: ShipHud;
   ring: SelectionRing;
   line: Mesh | null;
   // 导航虚线材质：每帧重建 LineMesh 时复用，避免每帧新建/销毁材质导致 shader 反复编译
@@ -50,7 +45,7 @@ export interface ShipVisual {
  * 贴图复用游戏内同一套绘制函数
  * shipSize 缩放舰船与 HUD 尺寸，默认 1
  */
-export function createShipVisual(ship: Ship, scene: Scene, shipSize = 1): ShipVisual {
+export function createShipVisual(ship: Ship, scene: Scene, hudLayer: ShipHudLayer, shipSize = 1): ShipVisual {
   // 贴图分辨率随 shipSize 放大，矢量绘制放大后更清晰
   const scale = SHIP_TEX_SCALE * shipSize;
   // 高度加上炮管留白，舰船本体仍绘制在贴图中央
@@ -66,16 +61,8 @@ export function createShipVisual(ship: Ship, scene: Scene, shipSize = 1): ShipVi
   mesh.metadata = ship;
   mesh.isPickable = true;
 
-  // 头顶 HUD 网格，尺寸随 shipSize 缩放
-  const hudWidth = HUD_W * shipSize;
-  const hudHeight = HUD_H * shipSize;
-  const hudTexture = new DynamicTexture(`shipHudTexture_${ship.name}`, { width: hudWidth, height: hudHeight }, scene, true);
-  paintShipHud(toCanvas2D(hudTexture), ship, hudWidth, hudHeight);
-  hudTexture.update();
-
-  const hud = createPlane(`shipHud_${ship.name}`, hudWidth, hudHeight, scene, RG_HUD);
-  const hudMaterial = createSpriteMaterial(`shipHudMaterial_${ship.name}`, hudTexture, scene);
-  hud.material = hudMaterial;
+  // 头顶 HUD：Babylon GUI 控件，随 mesh 投影跟随，不再生成贴图平面
+  const hud = hudLayer.create(ship, mesh, shipSize);
 
   // 选中圈：必须与舰船同组（RG_SHIP）而不是海面 group 0。
   // 海面顶点着色器会把波峰朝相机方向推最多约 12 个世界单位，group 0 内波峰会比 z=-0.5 的圈更近，
@@ -94,8 +81,6 @@ export function createShipVisual(ship: Ship, scene: Scene, shipSize = 1): ShipVi
     material: mesh.material as StandardMaterial,
     texture,
     hud,
-    hudMaterial,
-    hudTexture,
     ring,
     line: null,
     lineMaterial,

@@ -4,8 +4,6 @@
   "legend": "地形图例",
   "entities": "舰艇 & 建筑",
   "language": "语言",
-  "english": "英语",
-  "chinese": "中文",
   "hud": {
     "title": "2D 海战 · 自动对战",
     "weaponInfo": "主炮 10 伤害（曲射 · 射程 1100） · 鱼雷 30 伤害 ×3~5 · 规避转体 90°",
@@ -81,5 +79,17 @@
     "range": "射程",
     "damage": "伤害",
     "cooldown": "冷却"
+  },
+  "shipHud": {
+    "names": {
+      "red1": "红-1",
+      "red2": "红-2",
+      "blue1": "蓝-1",
+      "blue2": "蓝-2"
+    },
+    "state": {
+      "dodge": "规避",
+      "recover": "回正"
+    }
   }
 }

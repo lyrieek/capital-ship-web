@@ -77,8 +77,18 @@ export function toggleGameSpeed(): number {
   return gameSpeed;
 }
 
-const mkShip = (team: "red" | "blue", name: string, x: number, y: number, dir: 1 | -1, minX: number, maxX: number, light: string, dark: string) =>
-  new ShipImpl({ team, name, x, y, baseY: y, dir, minX, maxX, light, dark });
+const mkShip = (
+  team: "red" | "blue",
+  name: string,
+  nameKey: string,
+  x: number,
+  y: number,
+  dir: 1 | -1,
+  minX: number,
+  maxX: number,
+  light: string,
+  dark: string,
+) => new ShipImpl({ team, name, nameKey, x, y, baseY: y, dir, minX, maxX, light, dark });
 
 // oxlint-disable-next-line max-lines-per-function
 export function initializeGame(): GameState {
@@ -104,10 +114,10 @@ export function initializeGame(): GameState {
       this.manualFireCD = 0;
 
       this.ships = [
-        mkShip("red", "红-1", 200, 120, 1, 70, 400, "#ff7b6b", "#b8322a"),
-        mkShip("red", "红-2", 280, 240, -1, 70, 400, "#ff9f8a", "#c43a30"),
-        mkShip("blue", "蓝-1", 700, 360, -1, W - 330, W, "#7cc4ff", "#1d5c9e"),
-        mkShip("blue", "蓝-2", 620, 480, 1, W - 330, W, "#a5d8ff", "#2a6ba8"),
+        mkShip("red", "红-1", "shipHud.names.red1", 200, 120, 1, 70, 400, "#ff7b6b", "#b8322a"),
+        mkShip("red", "红-2", "shipHud.names.red2", 280, 240, -1, 70, 400, "#ff9f8a", "#c43a30"),
+        mkShip("blue", "蓝-1", "shipHud.names.blue1", 700, 360, -1, W - 330, W, "#7cc4ff", "#1d5c9e"),
+        mkShip("blue", "蓝-2", "shipHud.names.blue2", 620, 480, 1, W - 330, W, "#a5d8ff", "#2a6ba8"),
       ];
     },
 

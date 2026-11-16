@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import type { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Button, Rectangle, StackPanel, TextBlock } from "@babylonjs/gui";
+import { sendGuiLayerToFront } from "../babylon/gui";
 
 export interface ModelAction {
   label: string;
@@ -81,6 +82,7 @@ export default function Model({
   useEffect(() => {
     if (!scene) return;
     const root = AdvancedDynamicTexture.CreateFullscreenUI(`model${id}`, true, scene);
+    sendGuiLayerToFront(root);
 
     const backdrop = new Rectangle("modelBackdrop");
     backdrop.width = "100%";

@@ -3,6 +3,7 @@ import type { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Button, Control, StackPanel, TextBlock } from "@babylonjs/gui";
 import { useTranslation } from "react-i18next";
 import { getGameSpeed, setGameSpeed } from "../game/Game";
+import { insertGuiLayerBeforeModels } from "../babylon/gui";
 
 export interface HudProps {
   scene: Scene | null;
@@ -51,10 +52,10 @@ function makeTextBlock(
       : vertical === "bottom"
         ? TextBlock.VERTICAL_ALIGNMENT_BOTTOM
         : TextBlock.VERTICAL_ALIGNMENT_CENTER;
-  tb.left = left;
-  tb.top = top;
+  tb.left = typeof left === "number" ? `${left}px` : left;
+  tb.top = typeof top === "number" ? `${top}px` : top;
   tb.width = width;
-  tb.height = height;
+  tb.height = `${height}px`;
   return tb;
 }
 
@@ -69,6 +70,7 @@ export default function Hud({ scene, allow2x }: HudProps) {
   useEffect(() => {
     if (!scene) return;
     const root = AdvancedDynamicTexture.CreateFullscreenUI("hudUi", true, scene);
+    insertGuiLayerBeforeModels(root);
 
     const title = makeTextBlock("hudTitle", "#b4d7f5", "600", 15, "left", "top", 22, 32, "20%", 20);
     root.addControl(title);
@@ -87,8 +89,8 @@ export default function Hud({ scene, allow2x }: HudProps) {
     speedStack.isVertical = true;
     speedStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     speedStack.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    speedStack.left = "20%";
-    speedStack.top = "32px";
+    speedStack.left = "16%";
+    speedStack.top = "26px";
     root.addControl(speedStack);
 
     const speedBtn = new Button("speedBtn");
@@ -121,7 +123,7 @@ export default function Hud({ scene, allow2x }: HudProps) {
       selectionHintRef.current = null;
       speedBtnRef.current = null;
     };
-  }, [scene, t]);
+  }, [scene]);
 
   // allow2x 变化时只更新按钮可见性，不重建整个 HUD（避免文本消失）
   useEffect(() => {

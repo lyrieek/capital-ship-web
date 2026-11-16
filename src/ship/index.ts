@@ -24,6 +24,7 @@ export class ShipImpl implements Ship {
   light: string;
   dark: string;
   name: string;
+  nameKey?: string;
   team: "red" | "blue";
   baseY: number;
   order: SailOrder | null;
@@ -57,6 +58,7 @@ export class ShipImpl implements Ship {
     this.light = cfg.light;
     this.dark = cfg.dark;
     this.name = cfg.name;
+    this.nameKey = cfg.nameKey;
     this.team = cfg.team;
     this.baseY = cfg.baseY;
     this.order = null;

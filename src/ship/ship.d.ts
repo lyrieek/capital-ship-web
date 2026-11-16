@@ -24,6 +24,8 @@ export interface ShipConfig {
   dark: string;
   // 舰船名称
   name: string;
+  // 舰船名称的 i18n key，未设置时回落到 name
+  nameKey?: string;
   // 舰船所属阵营：red-红方，blue-蓝方
   team: "red" | "blue";
   // 基准Y坐标（用于规避和回正）

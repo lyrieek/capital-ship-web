@@ -4,8 +4,6 @@
   "legend": "Terrain Legend",
   "entities": "Ships & Buildings",
   "language": "Language",
-  "english": "English",
-  "chinese": "Chinese",
   "hud": {
     "title": "2D Naval Battle · Auto Battle",
     "weaponInfo": "Main Gun 10 DMG (arc · range 1100) · Torpedo 30 DMG ×3-5 · Dodge Turn 90°",
@@ -81,5 +79,17 @@
     "range": "Range",
     "damage": "Damage",
     "cooldown": "Cooldown"
+  },
+  "shipHud": {
+    "names": {
+      "red1": "Red-1",
+      "red2": "Red-2",
+      "blue1": "Blue-1",
+      "blue2": "Blue-2"
+    },
+    "state": {
+      "dodge": "Dodge",
+      "recover": "Recover"
+    }
   }
 }

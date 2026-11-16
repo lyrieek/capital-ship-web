@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 350" width="1200" height="700" role="img" aria-labelledby="title desc">
+  <defs>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8fbff"/>
+      <stop offset=".48" stop-color="#dce7f1"/>
+      <stop offset="1" stop-color="#9eafc1"/>
+    </linearGradient>
+    <linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#667b91"/>
+      <stop offset=".45" stop-color="#40566e"/>
+      <stop offset="1" stop-color="#26394f"/>
+    </linearGradient>
+    <linearGradient id="redHull" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ff7774"/>
+      <stop offset=".45" stop-color="#f0444d"/>
+      <stop offset="1" stop-color="#a90e32"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#f4f8fc"/>
+      <stop offset=".35" stop-color="#b8c7d6"/>
+      <stop offset=".7" stop-color="#71869b"/>
+      <stop offset="1" stop-color="#40546a"/>
+    </linearGradient>
+    <linearGradient id="turret" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#f5f8fc"/>
+      <stop offset=".5" stop-color="#c6d2df"/>
+      <stop offset="1" stop-color="#879bad"/>
+    </linearGradient>
+    <linearGradient id="bridge" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#dce8f3"/>
+      <stop offset=".55" stop-color="#9eb4c9"/>
+      <stop offset="1" stop-color="#627e9b"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#9ce8ff"/>
+      <stop offset=".45" stop-color="#438fbd"/>
+      <stop offset="1" stop-color="#244e7b"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+    <clipPath id="shipClip">
+      <path d="M16 191 H550 L536 248 H66 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- subtle grounding shadow -->
+  <path d="M48 253 Q290 267 552 251" fill="none" stroke="#8293a3" stroke-width="5" opacity=".16" filter="url(#shadow)"/>
+
+  <!-- gun barrels behind turrets -->
+  <g fill="none" stroke="#53687e" stroke-width="17" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M119 178 L64 163"/>
+    <path d="M218 161 L164 145"/>
+    <path d="M481 178 L531 164"/>
+  </g>
+  <g fill="none" stroke="url(#steel)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M119 178 L64 163"/>
+    <path d="M218 161 L164 145"/>
+    <path d="M481 178 L531 164"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" opacity=".75">
+    <path d="M116 174 L67 161"/>
+    <path d="M215 157 L167 143"/>
+    <path d="M484 174 L528 162"/>
+  </g>
+
+  <!-- hull -->
+  <path d="M16 191 H550 L536 248 H66 Z" fill="url(#hull)" stroke="#52677d" stroke-width="7" stroke-linejoin="round"/>
+  <g clip-path="url(#shipClip)">
+    <path d="M8 222 H548 L540 252 H62 L42 232 Z" fill="url(#redHull)"/>
+    <path d="M20 222 H548" stroke="#fff" stroke-width="2" opacity=".7"/>
+    <path d="M65 244 H537" stroke="#ffb0a5" stroke-width="2" opacity=".45"/>
+    <path d="M18 195 H548" stroke="#fff" stroke-width="2" opacity=".75"/>
+  </g>
+  <path d="M16 191 H550 L536 248 H66 Z" fill="none" stroke="#71869a" stroke-width="2.5" stroke-linejoin="round"/>
+
+  <!-- deck edge -->
+  <path d="M120 190 V184 H168 V190 M196 190 V166 H269 V190 M301 190 V166 H398 V190 M425 190 V166 H476 V190"
+        fill="none" stroke="url(#deck)" stroke-width="7" stroke-linejoin="round"/>
+
+  <!-- forward gun turret -->
+  <path d="M119 188 L124 166 H168 V188 Z" fill="url(#turret)" stroke="#536a80" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M126 169 H164" stroke="#fff" stroke-width="2" opacity=".8"/>
+  <path d="M124 184 H166" stroke="#8095a9" stroke-width="2"/>
+
+  <!-- second turret -->
+  <path d="M197 165 L219 141 H268 V165 Z" fill="url(#turret)" stroke="#536a80" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M221 145 H264" stroke="#fff" stroke-width="2" opacity=".8"/>
+  <path d="M201 160 H266" stroke="#8095a9" stroke-width="2"/>
+
+  <!-- bridge / central superstructure -->
+  <path d="M322 166 L337 106 H376 V166 Z" fill="url(#bridge)" stroke="#52677d" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M339 111 H371 V135 H333 Z" fill="url(#glass)" opacity=".9"/>
+  <path d="M337 139 H371 V162 H331 Z" fill="#dce7ef" opacity=".72"/>
+  <path d="M340 111 L355 111 L337 162" fill="none" stroke="#fff" stroke-width="2" opacity=".55"/>
+
+  <!-- rear turret -->
+  <path d="M425 188 V166 H475 L483 188 Z" fill="url(#turret)" stroke="#536a80" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M430 170 H472" stroke="#fff" stroke-width="2" opacity=".8"/>
+
+  <!-- turret roofs and deck fittings -->
+  <path d="M116 188 H172 M193 166 H272 M298 166 H401 M422 188 H484"
+        fill="none" stroke="#e9f1f7" stroke-width="3" opacity=".8"/>
+  <path d="M16 191 H550" stroke="#f9fcff" stroke-width="2" opacity=".9"/>
+</svg>

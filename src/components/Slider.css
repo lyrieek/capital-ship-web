@@ -1,0 +1,111 @@
+/* 通用滑动切换器：等分选项 + 单个滑块 */
+.slider {
+  position: relative;
+  display: inline-flex;
+  padding: 3px;
+  background: var(--surface-2, #f7fbfb);
+  border: 1px solid var(--line-strong, #b9ccd1);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 2px rgba(16, 36, 42, 0.06);
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  background: var(--surface, #fff);
+  border-radius: 999px;
+  box-shadow:
+    0 1px 2px rgba(16, 36, 42, 0.16),
+    0 0 0 1px var(--line, #dbe6e9);
+  transition: transform 0.24s cubic-bezier(0.4, 0.2, 0.2, 1);
+}
+
+.slider button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 76px;
+  margin: 0;
+  padding: 7px 12px;
+  font: 600 12px/1 var(--sans, system-ui, sans-serif);
+  color: var(--ink-soft, #5d737a);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.slider button[aria-checked="true"] {
+  color: var(--accent-ink, #075a62);
+}
+
+/* 覆盖全局 button:hover 的蓝色背景，只给未选中项轻微高亮 */
+.slider button:hover {
+  background: transparent;
+}
+
+.slider button:hover:not([aria-checked="true"]):not(:disabled) {
+  color: var(--accent, #0e7c86);
+  background: rgba(14, 124, 134, 0.1);
+}
+
+.slider button:disabled {
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.slider button:disabled:hover {
+  color: var(--ink-soft, #5d737a);
+  background: transparent;
+}
+
+.slider button:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.slider button:focus-visible {
+  outline: 2px solid var(--accent, #0e7c86);
+  outline-offset: 2px;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.slider svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* 手机端收紧，便于和相邻按钮同行 */
+@media (max-width: 768px) {
+  .slider button {
+    min-width: 0;
+    padding: 7px 9px;
+    gap: 5px;
+    font-size: 11.5px;
+  }
+
+  .slider svg {
+    width: 13px;
+    height: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slider-thumb {
+    transition: none;
+  }
+}
