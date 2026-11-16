@@ -22,7 +22,7 @@
 ## 页面
 
 - `/`：主战场。
-- `/hub`：HUD 预览与测试。
+- `/hud`：HUD 预览与测试。
 - `/expanse`：海域外观测试及海域类型切换。
 - `/weapons`：武器参数与弹道测试。
 - `/ship`：舰船行为和外观测试。
@@ -54,5 +54,19 @@ pnpm lint      # 格式检查和 Oxlint
 - `src/game/render.ts`、`src/ship/render-visual.ts`：Babylon.js 场景同步和舰船视觉资源。
 - `src/expanse/`：海域状态、海面渲染和海洋着色器。
 - `src/playground/`：HUD、海域、武器和舰船测试页面。
+
+## 目录结构
+
+```
+src/
+  App.tsx           路由与页面导航
+  components/       共用 UI（Hud、Model、BattleCanvas 等）
+  game/             对局逻辑（Game、碰撞、粒子、渲染、选中）
+  ship/             舰船 AI、伤害、视觉资源
+  weapons/          武器参数与弹道
+  expanse/          海域状态与海面渲染
+  playground/       各功能测试页面
+  locales/          i18n 语言包
+```
 
 项目目前没有单独配置自动化测试脚本；可用 `pnpm build` 和 `pnpm lint` 检查构建与代码规范。

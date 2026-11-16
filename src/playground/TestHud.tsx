@@ -8,7 +8,7 @@ import "./playground.css";
 
 // HUD 测试中心：仅渲染 HUD 组件本身，配合 input/checkbox 改变状态，
 // 方便在无游戏内容的前提下验证 HUD 的 Babylon GUI 表现与 i18n。
-export default function TestHub() {
+export default function TestHud() {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
