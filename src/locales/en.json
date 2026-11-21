@@ -4,6 +4,9 @@
   "legend": "Terrain Legend",
   "entities": "Ships & Buildings",
   "language": "Language",
+  "minimap": {
+    "title": "Tactical Map"
+  },
   "hud": {
     "title": "2D Naval Battle · Auto Battle",
     "weaponInfo": "Main Gun 10 DMG (arc · range 1100) · Torpedo 30 DMG ×3-5 · Dodge Turn 90°",

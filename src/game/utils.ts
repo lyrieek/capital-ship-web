@@ -1,3 +1,6 @@
+export { WORLD_H as H, WORLD_W as W } from "./world";
+import { WORLD_H } from "./world";
+
 export interface GameConfig {
   // 基础航速（像素/秒）
   moveSpeed: number;
@@ -36,13 +39,10 @@ export interface GameConfig {
   yMax: number;
 }
 
-// 画布尺寸
-export const W = 1600;
-export const H = 900;
 export const TAU = Math.PI * 2;
 
-// 舰船与边界保持的间距
-const EDGE_MARGIN = 70;
+// 舰船与边界保持的间距：按地图高度成比例（原 70 / 900 ≈ 7.8%）
+const EDGE_MARGIN = Math.round(WORLD_H * 0.06);
 
 // 游戏参数配置
 export const P: GameConfig = {
@@ -58,7 +58,7 @@ export const P: GameConfig = {
   firePenalty: 0.5,
   minSep: 80,
   yMin: EDGE_MARGIN,
-  yMax: H - EDGE_MARGIN,
+  yMax: WORLD_H - EDGE_MARGIN,
 };
 
 // 生成[a,b)区间内的随机数

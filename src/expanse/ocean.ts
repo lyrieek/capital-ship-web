@@ -149,8 +149,8 @@ export interface OceanSurface {
   setKind(kind: OceanKind): void;
   /** 设置光照方向 */
   setLight(azimuthDeg: number, elevationDeg: number): void;
-  /** 推进动画时间（秒） */
-  refresh(time: number): void;
+  /** 推进动画时间（秒）；focusSceneY 为相机焦点在场景坐标中的 Y */
+  refresh(time: number, focusSceneY?: number): void;
   dispose(): void;
 }
 
@@ -160,6 +160,8 @@ export interface OceanSurfaceOptions {
   /** 海面在世界坐标中的宽度/高度 */
   worldWidth: number;
   worldHeight: number;
+  /** 可见视口高度，用于渐变跨度（默认等于 worldHeight） */
+  viewHeight?: number;
   /** 网格细分数（默认 200 x 112） */
   segmentsX?: number;
   segmentsY?: number;
@@ -189,6 +191,7 @@ export function createOceanSurface(options: OceanSurfaceOptions): OceanSurface {
         "uTime",
         "uAmplitude",
         "uHalfHeight",
+        "uFocusY",
         "uColorEdge",
         "uColorCenter",
         "uSkyColor",
@@ -218,8 +221,9 @@ export function createOceanSurface(options: OceanSurfaceOptions): OceanSurface {
     setLight(azimuthDeg: number, elevationDeg: number) {
       material.setVector3("uLightDir", lightDirection(azimuthDeg, elevationDeg));
     },
-    refresh(time: number) {
+    refresh(time: number, focusSceneY = 0) {
       material.setFloat("uTime", time);
+      material.setFloat("uFocusY", focusSceneY);
     },
     dispose() {
       mesh.dispose();
@@ -229,7 +233,8 @@ export function createOceanSurface(options: OceanSurfaceOptions): OceanSurface {
 
   applyPreset(surface, kind);
   surface.setLight(DEFAULT_LIGHT_AZIMUTH, DEFAULT_LIGHT_ELEVATION);
-  material.setFloat("uHalfHeight", worldHeight / 2);
+  material.setFloat("uHalfHeight", (options.viewHeight ?? worldHeight) / 2);
+  material.setFloat("uFocusY", 0);
   material.setFloat("uTime", 0);
   return surface;
 }

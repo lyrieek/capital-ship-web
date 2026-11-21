@@ -6,12 +6,19 @@ import { H, W, P } from "./utils";
 import { RestrictArea, getTeamRestrictBounds } from "./RestrictArea";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
 import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
+// 地物（岛屿 / 礁石 / 建筑）的数据与查询已抽离到 src/terrain
+import { createTerrainItems, getTerrainField, setTerrainField, TerrainField } from "../terrain";
 
 const TAU = Math.PI * 2;
 const END_DELAY = 3;
 
 // 手动齐射（F 键）的公共冷却，避免连续按键无限输出
 const MANUAL_FIRE_COOLDOWN = 2.5;
+
+// 地物表：主场景只建一次，摆船（RestrictArea）、舰船碰撞（resolveCollisions）、渲染层共用。
+// 必须在 initializeGame() 之前建好：initializeGame() 会调用 RestrictArea.createShip() 摆船，
+// 而摆船要避开岛礁，否则船会出生在岛上（动不了、打不中）。
+setTerrainField(new TerrainField(createTerrainItems(W, H)));
 
 // 行动限制区域：按阵营分别定义，供主游戏自动摆船与渲染层画虚线框复用
 const redRestrictArea = new RestrictArea(getTeamRestrictBounds("red"), "red", true);
@@ -210,6 +217,19 @@ export function initializeGame(): GameState {
             b.x += nx * push;
             b.y += ny * push;
           }
+        }
+      }
+      // 兜底救援：舰船贴岸由 Babylon 内置碰撞负责（game/render.ts 里的 moveWithCollisions），
+      // 但那个系统只「阻止移动」，不会把已经插进岛里的物体推出来。
+      // 被舰船互相推开、或 reset 后位置异常时仍可能插进岛里，这里只做一次深插救援。
+      // 必须放在舰船互相推开之后，否则互相推开的位移可能又把船推回岛上。
+      const field = getTerrainField();
+      if (field) {
+        for (const s of alive) {
+          if (!field.isBlocked(s.x, s.y)) continue;
+          const spot = field.pushOut(s.x, s.y, s.wid * 0.5);
+          s.x = spot.x;
+          s.y = spot.y;
         }
       }
       for (const s of alive) {

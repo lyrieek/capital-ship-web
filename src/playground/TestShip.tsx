@@ -5,6 +5,8 @@ import { createOceanSurface } from "../expanse";
 import { createShip, type Ship } from "../ship/index";
 import { RestrictArea, getTeamRestrictBounds } from "../game/RestrictArea";
 import { H, P, W, approachAngle } from "../game/utils";
+import { VIEW_H, VIEW_W } from "../game/world";
+import { screenToWorld, setCameraFocus } from "../game/camera-focus";
 import { issueSelectionSail, updateSailOrder } from "../game/movement";
 import { bindAttackKey, bindOceanSelection, bindShipSelection, ShipSelection } from "../game/selection";
 import { createBabylonScene, worldToScene } from "../babylon";
@@ -17,11 +19,12 @@ import "./TestShip.css";
 
 // 渲染分组：海面在最底层
 const RG_OCEAN = 0;
+// 调试页只显示地图中央的一块视口，舰船摆在两岸限制区靠近中线的一侧
 const createShips = (): Ship[] => [
-  createShip({ team: "red", name: "红-1", nameKey: "shipHud.names.red1", x: 200, y: 120, dir: 1 }),
-  createShip({ team: "red", name: "红-2", nameKey: "shipHud.names.red2", x: 280, y: 240, dir: -1 }),
-  createShip({ team: "blue", name: "蓝-1", nameKey: "shipHud.names.blue1", x: 850, y: 360, dir: -1 }),
-  createShip({ team: "blue", name: "蓝-2", nameKey: "shipHud.names.blue2", x: 900, y: 480, dir: 1 }),
+  createShip({ team: "red", name: "红-1", nameKey: "shipHud.names.red1", x: 2250, y: 1200, dir: 1 }),
+  createShip({ team: "red", name: "红-2", nameKey: "shipHud.names.red2", x: 2400, y: 1600, dir: -1 }),
+  createShip({ team: "blue", name: "蓝-1", nameKey: "shipHud.names.blue1", x: 2750, y: 1200, dir: -1 }),
+  createShip({ team: "blue", name: "蓝-2", nameKey: "shipHud.names.blue2", x: 2900, y: 1600, dir: 1 }),
 ];
 
 // 把舰船状态同步到 Babylon 可视对象（位置 / 朝向 / 命中闪白 / 血条）
@@ -124,19 +127,22 @@ function useShipScene(
     const babylon = createBabylonScene({
       canvas,
       clearColor: [0.04, 0.17, 0.27, 1],
-      width: W,
-      height: H,
+      width: VIEW_W,
+      height: VIEW_H,
     });
     const scene = babylon.scene;
     sceneRef.current = scene;
-    const hudLayer = createShipHudLayer(scene, W);
+    // 调试页相机固定对准地图中心
+    setCameraFocus(W / 2, H / 2);
+    const hudLayer = createShipHudLayer(scene, VIEW_W);
 
-    // 创建海面
+    // 海面只铺满可见视口，坐标仍按整张大地图换算
     const oceanSurface = createOceanSurface({
       scene,
       kind: "shallow",
-      worldWidth: W,
-      worldHeight: H,
+      worldWidth: VIEW_W,
+      worldHeight: VIEW_H,
+      viewHeight: VIEW_H,
       segmentsX: 200,
       segmentsY: 112,
       renderingGroupId: RG_OCEAN,
@@ -172,14 +178,11 @@ function useShipScene(
     // F 键：选中的舰船向鼠标位置开火
     bindAttackKey(scene, () => demoAttack(shipsRef.current, selection, mouseRef.current));
 
-    // 将屏幕坐标转换为游戏世界坐标
+    // 将屏幕坐标转换为游戏世界坐标（按当前相机焦点换算）
     const toWorld = (event: MouseEvent): { x: number; y: number } | null => {
       const rect = canvas.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return null;
-      return {
-        x: ((event.clientX - rect.left) / rect.width) * W,
-        y: ((event.clientY - rect.top) / rect.height) * H,
-      };
+      return screenToWorld(event.clientX, event.clientY, rect);
     };
 
     // 鼠标移动时更新鼠标世界坐标
@@ -282,7 +285,7 @@ export default function TestShip() {
           </p>
         </section>
         <section className="playground-preview">
-          <canvas ref={canvasRef} className="playground-canvas" width={W} height={H} />
+          <canvas ref={canvasRef} className="playground-canvas" width={VIEW_W} height={VIEW_H} />
         </section>
       </div>
       <Model

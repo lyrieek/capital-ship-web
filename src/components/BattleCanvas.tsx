@@ -3,13 +3,24 @@ import type { Scene } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { getGameInstance, initializeGame, resetGame, getGameSpeedMultiplier } from "../game/Game";
 import { disposeRender, getShipSelection, initRender, renderGame, getRestrictError } from "../game/render";
+import { panCameraBy, screenToWorld } from "../game/camera-focus";
 import { bindAttackKey } from "../game/selection";
 import { W, H } from "../game/utils";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
 import Hud from "./Hud";
+import Minimap from "./Minimap";
 import Model from "./Model";
 
-// 2D 海战 Babylon.js 渲染容器（尺寸由 App.css 的 .map-section canvas 控制）
+// Keyboard viewport panning: WASD and arrow keys, in world units per second.
+const PAN_KEYS = new Set(["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"]);
+const PAN_SPEED = 760;
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
+}
+
+// Babylon.js render container for the 2D naval battle.
 export default function BattleCanvas() {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -19,13 +30,17 @@ export default function BattleCanvas() {
   const [winnerTeam, setWinnerTeam] = useState<"red" | "blue" | null>(null);
   const [restrictError, setRestrictError] = useState<string | null>(null);
   const [showRestrictError, setShowRestrictError] = useState(false);
-  // 用 ref 打破 render loop 闭包的 stale问题：loop 内始终与最新状态比较
+  // Refs keep the render loop's closure from going stale.
   const gameOverRef = useRef(false);
   const winnerTeamRef = useRef<"red" | "blue" | null>(null);
-  // 鼠标在世界坐标中的位置，供 F 键开火瞄准
+  // Last mouse position in world coordinates, used for F-key aiming.
   const mouseRef = useRef<{ x: number; y: number }>({ x: W / 2, y: H / 2 });
+  // Last mouse screen position: the camera moves, so F recomputes the world point.
+  const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  // Held WASD / arrow keys, applied every frame by the render loop.
+  const panKeysRef = useRef(new Set<string>());
 
-  // 屏蔽右键菜单，否则右键移动会弹出浏览器菜单
+  // Block the context menu so right-click fleet orders work.
   usePreventContextMenu(canvasRef);
 
   useEffect(() => {
@@ -34,49 +49,74 @@ export default function BattleCanvas() {
 
     initializeGame();
     const engine = initRender(canvas);
-    // 按 CSS 布局尺寸校正画布分辨率（避免初始 0×0 黑屏）
+    // Correct the canvas resolution from CSS layout (avoid an initial 0x0 canvas).
     engine.resize();
     sceneRef.current = engine.scenes[0] ?? null;
     setSceneVersion((v) => v + 1);
 
-    // F 键：命令当前选中的舰船向鼠标所在世界位置齐射
+    // F key: make the selected ships fire at the mouse world position.
     const selection = getShipSelection();
     if (sceneRef.current && selection) {
       bindAttackKey(sceneRef.current, () => {
         const game = getGameInstance();
-        const mouse = mouseRef.current;
-        if (game && mouse) game.focusFireAt(selection.list, mouse.x, mouse.y);
+        const pointer = pointerRef.current;
+        const rect = canvas.getBoundingClientRect();
+        if (!game || !pointer || rect.width <= 0 || rect.height <= 0) return;
+        const aim = screenToWorld(pointer.clientX, pointer.clientY, rect);
+        mouseRef.current = aim;
+        game.focusFireAt(selection.list, aim.x, aim.y);
       });
     }
 
-    const toWorld = (event: MouseEvent): { x: number; y: number } | null => {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return null;
-      return {
-        x: ((event.clientX - rect.left) / rect.width) * W,
-        y: ((event.clientY - rect.top) / rect.height) * H,
-      };
-    };
-
     const handleMove = (event: MouseEvent) => {
-      const point = toWorld(event);
-      if (point) mouseRef.current = point;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      pointerRef.current = { clientX: event.clientX, clientY: event.clientY };
+      mouseRef.current = screenToWorld(event.clientX, event.clientY, rect);
     };
     canvas.addEventListener("mousemove", handleMove);
+
+    // WASD / arrow keys: hold to pan the camera viewport.
+    const panKeys = panKeysRef.current;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (!PAN_KEYS.has(key) || isEditableTarget(event.target)) return;
+      // Don't swallow browser shortcuts like Ctrl+D / Cmd+W.
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      event.preventDefault();
+      panKeys.add(key);
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      panKeys.delete(event.key.toLowerCase());
+    };
+    const handleBlur = () => panKeys.clear();
+    globalThis.addEventListener("keydown", handleKeyDown);
+    globalThis.addEventListener("keyup", handleKeyUp);
+    globalThis.addEventListener("blur", handleBlur);
 
     let last = performance.now();
     engine.runRenderLoop(() => {
       const now = performance.now();
-      let dt = (now - last) / 1000;
+      const rawDt = Math.min((now - last) / 1000, 0.05);
       last = now;
-      dt = Math.min(dt, 0.05) * getGameSpeedMultiplier();
+      const dt = rawDt * getGameSpeedMultiplier();
 
       const game = getGameInstance();
       if (!game) return;
       game.update(dt);
-      renderGame(game);
 
-      // 限制区错误：有错误时弹出 modal，并停止渲染循环以避免继续画越界船
+      // Keyboard panning uses real time and is not affected by 2x game speed.
+      const dx = (panKeys.has("d") || panKeys.has("arrowright") ? 1 : 0) - (panKeys.has("a") || panKeys.has("arrowleft") ? 1 : 0);
+      const dy = (panKeys.has("s") || panKeys.has("arrowdown") ? 1 : 0) - (panKeys.has("w") || panKeys.has("arrowup") ? 1 : 0);
+      if (dx !== 0 || dy !== 0) {
+        const length = Math.hypot(dx, dy);
+        const step = (PAN_SPEED * rawDt) / length;
+        panCameraBy(dx * step, dy * step);
+      }
+
+      renderGame(game, dt);
+
+      // Restrict-area errors stop the loop and show a modal instead of drawing out-of-bounds ships.
       const err = getRestrictError();
       if (err && !showRestrictError) {
         setRestrictError(err);
@@ -84,7 +124,7 @@ export default function BattleCanvas() {
         engine.stopRenderLoop();
       }
 
-      // 把游戏结束状态同步到 React HUD（用 ref 避免闭包 stale）
+      // Sync game-over state into React via refs to avoid stale closure values.
       if (game.over !== gameOverRef.current || game.winnerTeam !== winnerTeamRef.current) {
         gameOverRef.current = game.over;
         winnerTeamRef.current = game.winnerTeam;
@@ -94,10 +134,14 @@ export default function BattleCanvas() {
     });
 
     const handleResize = () => engine.resize();
-    window.addEventListener("resize", handleResize);
+    globalThis.addEventListener("resize", handleResize);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      globalThis.removeEventListener("resize", handleResize);
+      globalThis.removeEventListener("keydown", handleKeyDown);
+      globalThis.removeEventListener("keyup", handleKeyUp);
+      globalThis.removeEventListener("blur", handleBlur);
+      panKeys.clear();
       canvas.removeEventListener("mousemove", handleMove);
       engine.stopRenderLoop();
       disposeRender();
@@ -118,9 +162,10 @@ export default function BattleCanvas() {
   const winnerText = winnerTeam === "red" ? t("hud.winnerRed") : winnerTeam === "blue" ? t("hud.winnerBlue") : t("hud.winnerDraw");
 
   return (
-    <>
-      <canvas ref={canvasRef} id="c" />
+    <div className="battle-stage">
+      <canvas ref={canvasRef} id="c" className="battle-canvas" />
       {scene ? <Hud key={sceneVersion} scene={scene} allow2x={true} /> : null}
+      <Minimap />
       <Model
         scene={scene}
         open={gameOver}
@@ -144,6 +189,6 @@ export default function BattleCanvas() {
           },
         ]}
       />
-    </>
+    </div>
   );
 }

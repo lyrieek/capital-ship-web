@@ -4,6 +4,9 @@
   "legend": "地形图例",
   "entities": "舰艇 & 建筑",
   "language": "语言",
+  "minimap": {
+    "title": "战术地图"
+  },
   "hud": {
     "title": "2D 海战 · 自动对战",
     "weaponInfo": "主炮 10 伤害（曲射 · 射程 1100） · 鱼雷 30 伤害 ×3~5 · 规避转体 90°",

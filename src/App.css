@@ -50,13 +50,58 @@
   align-items: flex-start;
 }
 
-/* 战场画布：随容器宽度缩放，保持 16:9（与 1600x900 的世界坐标一致） */
-.map-section canvas {
-  display: block;
+/* 战场舞台：承载画布与右下角小地图，小地图定位相对它 */
+.battle-stage {
+  position: relative;
   width: 100%;
   max-width: 1600px;
+}
+
+/* 战场画布：随容器宽度缩放，保持 16:9（与 1600x900 的视口一致） */
+.battle-stage .battle-canvas {
+  display: block;
+  width: 100%;
   aspect-ratio: 16 / 9;
   touch-action: none;
+}
+
+/* 右下角战术小地图 */
+.minimap {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 220px;
+  padding: 6px;
+  border: 1px solid rgba(150, 215, 255, 0.35);
+  border-radius: 7px;
+  background: rgba(4, 20, 30, 0.72);
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  user-select: none;
+}
+
+.minimap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.minimap canvas:active {
+  cursor: grabbing;
+}
+
+.minimap-title {
+  margin-bottom: 2px;
+  color: #cfe9fb;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .sidebar {

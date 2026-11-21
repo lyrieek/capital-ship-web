@@ -1,6 +1,6 @@
 // 舰船可视对象的创建：主游戏与 playground 共用同一套，避免重复实现。
 // bindShipSelection 由调用方自行绑定，此处只负责 Mesh / 贴图 / 选中圈的创建。
-import { Color3, DynamicTexture, MeshBuilder, StandardMaterial, type Mesh, type Scene } from "@babylonjs/core";
+import { Color3, DynamicTexture, MeshBuilder, StandardMaterial, Vector3, type Mesh, type Scene } from "@babylonjs/core";
 import { paintShip, SHIP_TEX_PAD } from "../game/textures";
 import { createSelectionRing, type SelectionRing } from "../game/selection";
 import { createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
@@ -18,6 +18,10 @@ export const RING_Z = -0.5;
 
 // 舰船贴图放大倍率（矢量绘制，放大后更清晰）
 export const SHIP_TEX_SCALE = 2;
+
+// Babylon 内置碰撞椭球的高度半径：舰船是贴在海面上的薄片，
+// 但要能碰到岛屿从 0 到 -34 的斜坡，所以给 3 个世界单位。
+const SHIP_COLLISION_HALF_HEIGHT = 3;
 
 // 每艘舰船对应的可视对象
 export interface ShipVisual {
@@ -62,6 +66,13 @@ export function createShipVisual(ship: Ship, scene: Scene, hudLayer: ShipHudLaye
   mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
   mesh.metadata = ship;
   mesh.isPickable = true;
+
+  // Babylon 内置碰撞（不是物理引擎）：
+  // 椭球在网格本地空间，X=半舰长、Y=半舰宽、Z=很薄的一层。
+  // 网格每帧按舰艏朝向旋转，椭球跟着转，所以斜向航行时碰撞盒也是斜的。
+  // 只设置 ellipsoid 就够了——checkCollisions 是标记「障碍物」用的，舰船是移动方，不要开。
+  // 碰撞由 game/render.ts 每帧调用 mesh.moveWithCollisions(位移) 驱动。
+  mesh.ellipsoid = new Vector3((ship.len * shipSize) / 2, (ship.wid * shipSize) / 2, SHIP_COLLISION_HALF_HEIGHT);
 
   // 头顶 HUD：Babylon GUI 控件，随 mesh 投影跟随，不再生成贴图平面
   const hud = hudLayer.create(ship, mesh, shipSize);

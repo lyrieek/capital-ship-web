@@ -2,6 +2,8 @@ import type { Ship, ShipConfig, SailOrder, ThreatItem } from "./ship";
 import { P, rand, clamp, angleDiff, approachAngle } from "../game/utils";
 import { updateSailOrder } from "../game/movement";
 import { getGameInstance } from "../game/Game";
+// 地物查询：提前避让岛礁 / 船厂检测都走这里，不碰 Babylon
+import { getTerrainField, TERRAIN_AVOID_LOOK_AHEAD } from "../terrain";
 // 武器参数集中在 src/weapons
 import { getWeaponSpec, withinRange } from "../weapons";
 export type { Ship, ShipConfig, SailOrder, ThreatItem } from "./ship";
@@ -12,6 +14,9 @@ const TORPEDO = getWeaponSpec("torp");
 
 // 炮口与目标方向的夹角小于该值（约 3.4°）才允许开火
 const AIM_TOLERANCE = 0.06;
+
+// 避让时椭球半宽之外再留一点余量，避免贴到礁石才反应
+const AVOID_MARGIN = 12;
 
 export class ShipImpl implements Ship {
   x: number;
@@ -195,6 +200,7 @@ export class ShipImpl implements Ship {
         this.angle = approachAngle(this.angle, this.baseAngle, rotStep);
         const th = this.findThreat();
         if (th) this.startDodge(th);
+        else this.steerTowardTarget(dt);
       } else if (this.state === "dodge") {
         // 规避状态：转向90度角度并快速移动
         const targetAngle = this.baseAngle + (this.dodgeSide * Math.PI) / 2;
@@ -225,6 +231,11 @@ export class ShipImpl implements Ship {
           this.y = this.baseY;
         }
       }
+
+      // 提前避让岛礁：Babylon 碰撞只会把船挡住，不会让船自己找路。
+      // 所以在 normal 状态下先看前方 TERRAIN_AVOID_LOOK_AHEAD 有没有陆地，
+      // 有就提前横移换一条水道，而不是直直撞上去卡在原地。
+      if (this.state === "normal") this.applyTerrainAvoidance(dt);
 
       // 计算水平速度（根据当前状态）
       const speedFactor = this.state === "normal" ? P.normalFactor : P.dodgeFactor;
@@ -257,6 +268,35 @@ export class ShipImpl implements Ship {
 
     // 处理武器发射
     this.updateWeapons(dt);
+  }
+
+  // 大地图上双方出生 Y 相差很大，若只沿 X 巡航可能永远擦肩而过。
+  // 没有任务指令时缓慢向最近敌舰的 Y 车道靠拢，保证能进入武器射程。
+  private steerTowardTarget(dt: number): void {
+    const target = this.findTarget();
+    if (!target) return;
+    const dy = target.y - this.y;
+    if (Math.abs(dy) <= P.minSep) return;
+
+    const chase = P.moveSpeed * P.normalFactor * 0.35 * dt;
+    const step = Math.sign(dy) * Math.min(Math.abs(dy), chase);
+    this.y = clamp(this.y + step, P.yMin, P.yMax);
+    this.baseY = this.y;
+  }
+
+  // 提前避让岛礁：舰船在 normal 状态只沿 X 走，所以「拐弯」只能体现为提前横移换水道。
+  // 必须放在 steerTowardTarget 之后，否则向目标车道靠拢的位移会把船又推回岛前。
+  private applyTerrainAvoidance(dt: number): void {
+    const field = getTerrainField();
+    if (!field) return;
+
+    const side = field.avoidSide(this.x, this.y, this.dir, this.wid / 2 + AVOID_MARGIN, TERRAIN_AVOID_LOOK_AHEAD, P.yMin, P.yMax);
+    if (side === 0) return;
+
+    const step = P.moveSpeed * P.normalFactor * dt;
+    this.y = clamp(this.y + side * step, P.yMin, P.yMax);
+    // 把新水道记成基准航线：否则回正状态会把船拽回原来的航线，又一头撞回岛上
+    this.baseY = this.y;
   }
 
   // 炮管对准指定角度才算瞄准完成

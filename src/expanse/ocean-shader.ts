@@ -127,6 +127,7 @@ export const OCEAN_FRAGMENT_SHADER = `
   uniform float uTime;
   uniform float uAmplitude;
   uniform float uHalfHeight;
+  uniform float uFocusY;
   uniform vec3 uColorEdge;
   uniform vec3 uColorCenter;
   uniform vec3 uSkyColor;
@@ -160,8 +161,8 @@ export const OCEAN_FRAGMENT_SHADER = `
     float spec = pow(ndh, uSpecPower) * uSpecStrength;
     float sheen = pow(ndh, 4.0) * 0.20 * uSpecStrength;
 
-    // 底色：上下渐变
-    float vgrad = clamp(abs(p.y) / max(uHalfHeight, 1.0), 0.0, 1.0);
+    // 底色：以当前相机焦点为中心的上下渐变（大地图平移时保持观感一致）
+    float vgrad = clamp(abs(p.y - uFocusY) / max(uHalfHeight, 1.0), 0.0, 1.0);
     vec3 base = mix(uColorCenter, uColorEdge, vgrad);
 
     // 波峰带：亮带随浪走，是画面里最显眼的结构

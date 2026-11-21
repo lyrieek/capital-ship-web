@@ -9,6 +9,16 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('@babylonjs')) return 'vendor-babylon';
+          if (id.includes('react') || id.includes('react-router-dom')) return 'vendor-react';
+          if (id.includes('i18next')) return 'vendor-i18n';
+          return 'vendor';
+        },
+      },
+    },
   },
 });
