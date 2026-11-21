@@ -4,6 +4,8 @@ import { updateSailOrder } from "../game/movement";
 import { getGameInstance } from "../game/Game";
 // 武器参数集中在 src/weapons
 import { getWeaponSpec, withinRange } from "../weapons";
+export type { Ship, ShipConfig, SailOrder, ThreatItem } from "./ship";
+export { createShip, getTeamColors } from "./create-ship";
 
 const CANNON = getWeaponSpec("shell");
 const TORPEDO = getWeaponSpec("torp");
@@ -46,21 +48,22 @@ export class ShipImpl implements Ship {
   aimOrder: SailOrder | null;
 
   constructor(cfg: ShipConfig) {
-    this.x = cfg.x;
-    this.y = cfg.y;
-    this.minX = cfg.minX;
-    this.maxX = cfg.maxX;
-    this.dir = cfg.dir;
+    this.x = cfg.x ?? 0;
+    this.y = cfg.y ?? 0;
+    // 行动限制区由 RestrictArea 类统一设置，船本身缺省无限制
+    this.minX = -Infinity;
+    this.maxX = Infinity;
+    this.dir = cfg.dir ?? 1;
     this.hp = 100;
     this.maxHp = 100;
     this.len = 100;
     this.wid = 30;
-    this.light = cfg.light;
-    this.dark = cfg.dark;
+    this.light = cfg.light ?? "#ffffff";
+    this.dark = cfg.dark ?? "#666666";
     this.name = cfg.name;
     this.nameKey = cfg.nameKey;
     this.team = cfg.team;
-    this.baseY = cfg.baseY;
+    this.baseY = cfg.baseY ?? cfg.y ?? 0;
     this.order = null;
 
     this.baseAngle = this.dir > 0 ? 0 : Math.PI;

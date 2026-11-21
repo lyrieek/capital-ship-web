@@ -44,6 +44,8 @@ export interface ShipVisual {
  * 创建舰船本体 + 头顶 HUD + 选中圈
  * 贴图复用游戏内同一套绘制函数
  * shipSize 缩放舰船与 HUD 尺寸，默认 1
+ * 注意：限制区虚线不在此处创建，应在画船前由 RestrictArea 统一画出。
+ * 若舰船位置超出其限制区，由 RestrictArea.validate 在画前抛错拒绝画。
  */
 export function createShipVisual(ship: Ship, scene: Scene, hudLayer: ShipHudLayer, shipSize = 1): ShipVisual {
   // 贴图分辨率随 shipSize 放大，矢量绘制放大后更清晰

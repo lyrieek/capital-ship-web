@@ -1,7 +1,7 @@
 // Babylon.js 渲染层：把 2D 海战状态同步到「正交俯视」场景
 // 相机固定在 -Z 方向俯视 XY 平面，世界单位与游戏像素坐标一一对应。
 // 后续还需优化 舰船/炮弹/粒子改为共享图集的 InstancedMesh/thin instance
-import { Color3, DynamicTexture, type Engine, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
+import { Color3, DynamicTexture, type Engine, type FreeCamera, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
 import { paintParticle, paintShip } from "./textures";
 import { createOceanSurface, getOceanKind, type OceanSurface } from "../expanse";
 import { createWeaponRender, type WeaponRender } from "../weapons";
@@ -10,7 +10,8 @@ import type { Ship } from "../ship/ship";
 import { H, W } from "./utils";
 import { bindOceanSelection, bindShipSelection, ShipSelection } from "./selection";
 import { issueSelectionSail } from "./movement";
-import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
+import { RestrictArea, getTeamRestrictBounds } from "./RestrictArea";
+import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, updateCameraEffect, worldToScene } from "../babylon";
 import { createShipHudLayer, type ShipHudLayer } from "../ship/hud";
 import { createShipVisual, disposeNavLine, type ShipVisual, SHIP_Z, RING_Z, SHIP_TEX_SCALE, updateShipNavigationLine } from "../ship/render-visual";
 
@@ -48,6 +49,14 @@ function moveSelection(x: number, y: number): void {
 
 // 每艘舰船对应的可视对象（reset 会重建舰船，故按对象身份做增删）
 const shipVisuals = new Map<Ship, ShipVisual>();
+// 行动限制区域：按阵营分别定义，在画船前验证位置并画虚线框
+let restrictAreas: RestrictArea[] | null = null;
+// 限制区验证错误信息（由 BattleCanvas 读取并弹 modal）
+let restrictError: string | null = null;
+
+export function getRestrictError(): string | null {
+  return restrictError;
+}
 
 // 炮管转动 / 舰体转向需要重绘舰船贴图；变化太小时跳过，避免每帧都重绘
 const REPAINT_STEP = 0.02;
@@ -99,6 +108,16 @@ function syncShips(game: GameState) {
     seen.add(ship);
     let visual = shipVisuals.get(ship);
     if (!visual) {
+      // 先验证船位置是否在限制区内（在画船之前），不在则拒绝画并记录错误供 modal 显示；
+      // 然后将限制区边界应用到船上（供碰撞 clamp 使用）
+      const area = restrictAreas?.find((a) => a.team === ship.team);
+      const err = area?.validate(ship);
+      if (err) {
+        restrictError = err;
+        continue;
+      }
+      area?.applyTo(ship);
+
       visual = createShipVisual(ship, scene!, hudLayer, 1);
       if (shipSelection) bindShipSelection(scene!, visual.mesh, ship, shipSelection, { onMove: moveSelection });
       shipVisuals.set(ship, visual);
@@ -180,6 +199,7 @@ function syncParticles(particles: ParticleItem[]) {
 }
 
 export function disposeRender() {
+  restrictError = null;
   shipVisuals.clear();
   shipSelection = null;
   particlePool.length = 0;
@@ -190,6 +210,10 @@ export function disposeRender() {
   oceanSurface = null;
   weaponRender?.dispose();
   weaponRender = null;
+  if (restrictAreas) {
+    for (const area of restrictAreas) area.dispose();
+    restrictAreas = null;
+  }
   if (engine) {
     engine.dispose();
     engine = null;
@@ -215,6 +239,10 @@ export function initRender(canvas: HTMLCanvasElement): Engine {
   createWater();
   if (oceanSurface) bindOceanSelection(scene, oceanSurface.mesh, selection, { onMove: moveSelection });
 
+  // 先定义地图行动限制区（按阵营），再画船；限制区虚线框在此一次性画出
+  restrictAreas = [new RestrictArea(getTeamRestrictBounds("red"), "red", true), new RestrictArea(getTeamRestrictBounds("blue"), "blue", true)];
+  for (const area of restrictAreas) area.draw(scene);
+
   weaponRender = createWeaponRender({
     scene,
     worldWidth: W,
@@ -227,6 +255,8 @@ export function initRender(canvas: HTMLCanvasElement): Engine {
 
 export function renderGame(game: GameState) {
   if (!scene) return;
+  // 相机轻微倾斜与摆动（可选，受 babylon/camera 模块开关控制）
+  updateCameraEffect(scene.activeCamera as FreeCamera | null, game.time);
   // 海域以 src/expanse/ocean-state.ts 的状态为准，状态变化后自动切换
   const kind = getOceanKind();
   if (oceanSurface && oceanSurface.kind !== kind) oceanSurface.setKind(kind);

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Scene } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { getGameInstance, initializeGame, resetGame, getGameSpeedMultiplier } from "../game/Game";
-import { disposeRender, getShipSelection, initRender, renderGame } from "../game/render";
+import { disposeRender, getShipSelection, initRender, renderGame, getRestrictError } from "../game/render";
 import { bindAttackKey } from "../game/selection";
 import { W, H } from "../game/utils";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
@@ -17,6 +17,8 @@ export default function BattleCanvas() {
   const [sceneVersion, setSceneVersion] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [winnerTeam, setWinnerTeam] = useState<"red" | "blue" | null>(null);
+  const [restrictError, setRestrictError] = useState<string | null>(null);
+  const [showRestrictError, setShowRestrictError] = useState(false);
   // 用 ref 打破 render loop 闭包的 stale问题：loop 内始终与最新状态比较
   const gameOverRef = useRef(false);
   const winnerTeamRef = useRef<"red" | "blue" | null>(null);
@@ -74,6 +76,14 @@ export default function BattleCanvas() {
       game.update(dt);
       renderGame(game);
 
+      // 限制区错误：有错误时弹出 modal，并停止渲染循环以避免继续画越界船
+      const err = getRestrictError();
+      if (err && !showRestrictError) {
+        setRestrictError(err);
+        setShowRestrictError(true);
+        engine.stopRenderLoop();
+      }
+
       // 把游戏结束状态同步到 React HUD（用 ref 避免闭包 stale）
       if (game.over !== gameOverRef.current || game.winnerTeam !== winnerTeamRef.current) {
         gameOverRef.current = game.over;
@@ -118,6 +128,21 @@ export default function BattleCanvas() {
         message={t("hud.restartPrompt")}
         titleColor={winnerTeam === "red" ? "#ff7b6b" : winnerTeam === "blue" ? "#7cc4ff" : "#cfe3f5"}
         actions={[{ label: t("hud.restartButton"), onClick: handleRestart }]}
+      />
+      <Model
+        scene={scene}
+        open={showRestrictError}
+        title={t("ship.restrictErrorTitle")}
+        message={restrictError ?? ""}
+        actions={[
+          {
+            label: t("ship.restrictErrorButton"),
+            onClick: () => {
+              setShowRestrictError(false);
+              setRestrictError(null);
+            },
+          },
+        ]}
       />
     </>
   );

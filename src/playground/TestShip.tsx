@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import type { Scene } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { createOceanSurface } from "../expanse";
-import { ShipImpl } from "../ship/index";
-import type { Ship, ShipConfig } from "../ship/ship";
+import { createShip, type Ship } from "../ship/index";
+import { RestrictArea, getTeamRestrictBounds } from "../game/RestrictArea";
 import { H, P, W, approachAngle } from "../game/utils";
 import { issueSelectionSail, updateSailOrder } from "../game/movement";
 import { bindAttackKey, bindOceanSelection, bindShipSelection, ShipSelection } from "../game/selection";
@@ -11,34 +11,17 @@ import { createBabylonScene, worldToScene } from "../babylon";
 import { createShipHudLayer } from "../ship/hud";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
 import { createShipVisual, disposeNavLine, type ShipVisual, SHIP_Z, RING_Z, updateShipNavigationLine } from "../ship/render-visual";
+import Model from "../components/Model";
 import "./playground.css";
 import "./TestShip.css";
 
 // 渲染分组：海面在最底层
 const RG_OCEAN = 0;
-// 创建一艘调试用舰船
-const createShip = (team: "red" | "blue", name: string, nameKey: string, x: number, y: number, dir: 1 | -1): Ship => {
-  const cfg: ShipConfig = {
-    x,
-    y,
-    baseY: y,
-    dir,
-    minX: 70,
-    maxX: W - 70,
-    light: team === "red" ? "#ff7b6b" : "#7cc4ff",
-    dark: team === "red" ? "#b8322a" : "#1d5c9e",
-    name,
-    nameKey,
-    team,
-  };
-  return new ShipImpl(cfg);
-};
-
 const createShips = (): Ship[] => [
-  createShip("red", "红-1", "shipHud.names.red1", 200, 120, 1),
-  createShip("red", "红-2", "shipHud.names.red2", 280, 240, -1),
-  createShip("blue", "蓝-1", "shipHud.names.blue1", 700, 360, -1),
-  createShip("blue", "蓝-2", "shipHud.names.blue2", 620, 480, 1),
+  createShip({ team: "red", name: "红-1", nameKey: "shipHud.names.red1", x: 200, y: 120, dir: 1 }),
+  createShip({ team: "red", name: "红-2", nameKey: "shipHud.names.red2", x: 280, y: 240, dir: -1 }),
+  createShip({ team: "blue", name: "蓝-1", nameKey: "shipHud.names.blue1", x: 850, y: 360, dir: -1 }),
+  createShip({ team: "blue", name: "蓝-2", nameKey: "shipHud.names.blue2", x: 900, y: 480, dir: 1 }),
 ];
 
 // 把舰船状态同步到 Babylon 可视对象（位置 / 朝向 / 命中闪白 / 血条）
@@ -125,9 +108,11 @@ function useShipScene(
   selection: ShipSelection,
   moveSelected: (x: number, y: number) => void,
   shipSize = 1,
-): number {
+): { fps: number; scene: Scene | null; restrictError: string | null } {
   const timeRef = useRef(0);
   const [fps, setFps] = useState(0);
+  const [restrictError, setRestrictError] = useState<string | null>(null);
+  const sceneRef = useRef<Scene | null>(null);
   // 鼠标在世界坐标中的位置，供 F 键开火瞄准
   const mouseRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -143,6 +128,7 @@ function useShipScene(
       height: H,
     });
     const scene = babylon.scene;
+    sceneRef.current = scene;
     const hudLayer = createShipHudLayer(scene, W);
 
     // 创建海面
@@ -159,7 +145,24 @@ function useShipScene(
     selection.clear();
 
     shipsRef.current = createShips();
+    // 先定义地图行动限制区（按阵营），再画船；限制区虚线框在此一次性画出
+    const restrictAreas = [
+      new RestrictArea(getTeamRestrictBounds("red"), "red", true),
+      new RestrictArea(getTeamRestrictBounds("blue"), "blue", true),
+    ];
+    for (const area of restrictAreas) area.draw(scene);
+
     for (const ship of shipsRef.current) {
+      // 先验证船位置是否在限制区内（在画船之前），不在则拒绝画并记录错误供 modal 显示；
+      // 然后将限制区边界应用到船上（供碰撞 clamp 使用）
+      const area = restrictAreas.find((a) => a.team === ship.team);
+      const err = area?.validate(ship);
+      if (err) {
+        setRestrictError(err);
+        continue;
+      }
+      area?.applyTo(ship);
+
       // 创建舰船本体 + 头顶 HUD + 选中圈
       const visual = createShipVisual(ship, scene, hudLayer, shipSize);
       visualsRef.current.set(ship, visual);
@@ -214,12 +217,14 @@ function useShipScene(
       canvas.removeEventListener("mousemove", handleMove);
       hudLayer.dispose();
       babylon.dispose();
+      setRestrictError(null);
+      for (const area of restrictAreas) area.dispose();
       visualsRef.current.clear();
       shipsRef.current = [];
     };
   }, [canvasRef, moveSelected, selection, shipsRef, visualsRef, shipSize]);
 
-  return fps;
+  return { fps, scene: sceneRef.current, restrictError };
 }
 
 // 调试页的公共控制器：维护舰船列表、可视对象、选择状态；
@@ -238,9 +243,9 @@ function useShipDebug(canvasRef: RefObject<HTMLCanvasElement | null>, shipSize =
 
   const clearSelection = useCallback(() => selection.clear(), [selection]);
 
-  const fps = useShipScene(canvasRef, shipsRef, visualsRef, selection, moveSelected, shipSize);
+  const { fps, scene, restrictError } = useShipScene(canvasRef, shipsRef, visualsRef, selection, moveSelected, shipSize);
 
-  return { fps, selectedCount, clearSelection };
+  return { fps, scene, selectedCount, clearSelection, restrictError };
 }
 
 export default function TestShip() {
@@ -248,7 +253,13 @@ export default function TestShip() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // 舰船与 HUD 缩放比例，默认 1，可在控制面板调节
   const [shipSize, setShipSize] = useState(1);
-  const { fps, selectedCount, clearSelection } = useShipDebug(canvasRef, shipSize);
+  const { fps, scene, selectedCount, clearSelection, restrictError } = useShipDebug(canvasRef, shipSize);
+  // 限制区错误模态：点击确认后清除
+  const [showRestrictError, setShowRestrictError] = useState(false);
+
+  useEffect(() => {
+    if (restrictError) setShowRestrictError(true);
+  }, [restrictError]);
 
   return (
     <div className="playground">
@@ -274,6 +285,20 @@ export default function TestShip() {
           <canvas ref={canvasRef} className="playground-canvas" width={W} height={H} />
         </section>
       </div>
+      <Model
+        scene={scene}
+        open={showRestrictError}
+        title={t("ship.restrictErrorTitle")}
+        message={restrictError ?? ""}
+        actions={[
+          {
+            label: t("ship.restrictErrorButton"),
+            onClick: () => {
+              setShowRestrictError(false);
+            },
+          },
+        ]}
+      />
     </div>
   );
 }

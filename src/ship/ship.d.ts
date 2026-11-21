@@ -8,31 +8,43 @@ export interface SailOrder {
 }
 
 export interface ShipConfig {
-  // X坐标
-  x: number;
-  // Y坐标
-  y: number;
-  // 最小X坐标（左边界）
-  minX: number;
-  // 最大X坐标（右边界）
-  maxX: number;
-  // 航向方向：1-右，-1-左
-  dir: 1 | -1;
-  // 舰船亮侧颜色
-  light: string;
-  // 舰船暗侧颜色
-  dark: string;
+  // X坐标，可选；未设置时由 RestrictArea 自动摆船分配
+  x?: number;
+  // Y坐标，可选；未设置时由 RestrictArea 自动摆船分配
+  y?: number;
+  // 航向方向：1-右，-1-左，可选；未设置时由 RestrictArea 按阵营分配
+  dir?: 1 | -1;
+  // 舰船亮侧颜色，可选，缺省按阵营分配
+  light?: string;
+  // 舰船暗侧颜色，可选，缺省按阵营分配
+  dark?: string;
   // 舰船名称
   name: string;
   // 舰船名称的 i18n key，未设置时回落到 name
   nameKey?: string;
   // 舰船所属阵营：red-红方，blue-蓝方
   team: "red" | "blue";
-  // 基准Y坐标（用于规避和回正）
-  baseY: number;
+  // 基准Y坐标（用于规避和回正），可选，缺省等于 y
+  baseY?: number;
 }
 
 export interface Ship extends ShipConfig {
+  // X坐标
+  x: number;
+  // Y坐标
+  y: number;
+  // 航向方向：1-右，-1-左
+  dir: 1 | -1;
+  // 最小X坐标（左边界），由 RestrictArea 统一设置，缺省 -Infinity
+  minX: number;
+  // 最大X坐标（右边界），由 RestrictArea 统一设置，缺省 Infinity
+  maxX: number;
+  // 舰船亮侧颜色
+  light: string;
+  // 舰船暗侧颜色
+  dark: string;
+  // 基准Y坐标（用于规避和回正）
+  baseY: number;
   // 当前航行指令；null 表示按原航线自动巡航
   order: SailOrder | null;
   // 当前生命值

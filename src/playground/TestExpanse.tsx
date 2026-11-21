@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { Engine } from "@babylonjs/core";
+import type { Engine, FreeCamera } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
-import { createBabylonScene } from "../babylon";
+import {
+  createBabylonScene,
+  DEFAULT_CAMERA_EFFECT,
+  getCameraEffect,
+  resetCameraEffect,
+  setCameraEffect,
+  updateCameraEffect,
+  type CameraEffect,
+} from "../babylon";
 import { createOceanSurface, DEFAULT_LIGHT_AZIMUTH, DEFAULT_LIGHT_ELEVATION, OCEAN_PRESETS, type OceanKind, type OceanSurface } from "../expanse";
 import "./playground.css";
 import "./TestExpanse.css";
@@ -105,6 +113,7 @@ function createOceanScene(
     last = now;
     if (!pausedRef.current) timeRef.current += dt * scaleRef.current;
     surface.refresh(timeRef.current);
+    updateCameraEffect(scene.activeCamera as FreeCamera | null, timeRef.current);
     scene.render();
     frames += 1;
     // 帧率统计限流，避免每帧触发 React 重渲染
@@ -221,6 +230,47 @@ interface ExpanseStatsProps {
   fps: number;
 }
 
+// 相机轻微倾斜与摆动：开关、倾斜角、摆动幅度与摆动速度
+function CameraField({ effect, onChange }: { effect: CameraEffect; onChange: (patch: Partial<CameraEffect>) => void }) {
+  const { t } = useTranslation();
+  return (
+    <fieldset>
+      <legend>{t("cameraEffect.title")}</legend>
+      <label>
+        <input type="checkbox" checked={effect.enabled} onChange={(e) => onChange({ enabled: e.target.checked })} />
+        {t("cameraEffect.enabled")}
+      </label>
+      <SliderField
+        label={t("cameraEffect.tiltAngle")}
+        value={effect.tiltAngle}
+        min={0}
+        max={30}
+        step={0.5}
+        format={(v) => `${v.toFixed(1)}${DEG}`}
+        onChange={(tiltAngle) => onChange({ tiltAngle })}
+      />
+      <SliderField
+        label={t("cameraEffect.swayAngle")}
+        value={effect.swayAngle}
+        min={0}
+        max={15}
+        step={0.5}
+        format={(v) => `${v.toFixed(1)}${DEG}`}
+        onChange={(swayAngle) => onChange({ swayAngle })}
+      />
+      <SliderField
+        label={t("cameraEffect.swaySpeed")}
+        value={effect.swaySpeed}
+        min={0}
+        max={8}
+        step={0.1}
+        format={(v) => v.toFixed(1)}
+        onChange={(swaySpeed) => onChange({ swaySpeed })}
+      />
+    </fieldset>
+  );
+}
+
 // 当前参数读数
 function ExpanseStats({ look, segments, fps }: ExpanseStatsProps) {
   const { t } = useTranslation();
@@ -257,6 +307,7 @@ interface ExpanseState {
   segments: number;
   showStats: boolean;
   fps: number;
+  cameraEffect: CameraEffect;
 }
 
 interface ExpanseActions {
@@ -266,6 +317,7 @@ interface ExpanseActions {
   onScaleChange: (value: number) => void;
   onSegmentsChange: (value: number) => void;
   onToggleStats: (value: boolean) => void;
+  onCameraEffectChange: (patch: Partial<CameraEffect>) => void;
   onReset: () => void;
 }
 
@@ -322,6 +374,7 @@ function ExpanseControls({ state, actions }: { state: ExpanseState; actions: Exp
         <input type="checkbox" checked={state.showStats} onChange={(e) => actions.onToggleStats(e.target.checked)} />
         {t("expanse.showStats")}
       </label>
+      <CameraField effect={state.cameraEffect} onChange={actions.onCameraEffectChange} />
       <button type="button" onClick={actions.onReset}>
         {t("expanse.reset")}
       </button>
@@ -347,6 +400,7 @@ export default function TestExpanse() {
   const [segments, setSegments] = useState(200);
   const [showStats, setShowStats] = useState(true);
   const [fps, setFps] = useState(0);
+  const [cameraEffectState, setCameraEffectState] = useState<CameraEffect>(getCameraEffect());
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -386,6 +440,16 @@ export default function TestExpanse() {
     setTimeScale(value);
   };
 
+  const changeCameraEffect = (patch: Partial<CameraEffect>) => {
+    setCameraEffect(patch);
+    setCameraEffectState({
+      enabled: patch.enabled ?? cameraEffectState.enabled,
+      tiltAngle: patch.tiltAngle ?? cameraEffectState.tiltAngle,
+      swayAngle: patch.swayAngle ?? cameraEffectState.swayAngle,
+      swaySpeed: patch.swaySpeed ?? cameraEffectState.swaySpeed,
+    });
+  };
+
   const reset = () => {
     replaceLook(lookFromPreset("shallow", DEFAULT_LIGHT_AZIMUTH, DEFAULT_LIGHT_ELEVATION));
     pausedRef.current = false;
@@ -393,13 +457,20 @@ export default function TestExpanse() {
     scaleRef.current = 1;
     setTimeScale(1);
     setSegments(200);
+    resetCameraEffect();
+    setCameraEffectState({
+      enabled: DEFAULT_CAMERA_EFFECT.enabled,
+      tiltAngle: DEFAULT_CAMERA_EFFECT.tiltAngle,
+      swayAngle: DEFAULT_CAMERA_EFFECT.swayAngle,
+      swaySpeed: DEFAULT_CAMERA_EFFECT.swaySpeed,
+    });
   };
 
   return (
     <div className="playground">
       <div className="playground-body">
         <ExpanseControls
-          state={{ look, paused, timeScale, segments, showStats, fps }}
+          state={{ look, paused, timeScale, segments, showStats, fps, cameraEffect: cameraEffectState }}
           actions={{
             onKindChange: changeKind,
             onLookChange: changeLook,
@@ -407,6 +478,7 @@ export default function TestExpanse() {
             onScaleChange: changeScale,
             onSegmentsChange: setSegments,
             onToggleStats: setShowStats,
+            onCameraEffectChange: changeCameraEffect,
             onReset: reset,
           }}
         />

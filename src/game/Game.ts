@@ -1,9 +1,9 @@
 // Game state singleton
 import type { GameState, ParticleItem } from "./types";
-import { ShipImpl } from "../ship/index";
 import type { Ship } from "../ship/ship";
 import { renderGame } from "./render";
 import { H, W, P } from "./utils";
+import { RestrictArea, getTeamRestrictBounds } from "./RestrictArea";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
 import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
 
@@ -12,6 +12,14 @@ const END_DELAY = 3;
 
 // 手动齐射（F 键）的公共冷却，避免连续按键无限输出
 const MANUAL_FIRE_COOLDOWN = 2.5;
+
+// 行动限制区域：按阵营分别定义，供主游戏自动摆船与渲染层画虚线框复用
+const redRestrictArea = new RestrictArea(getTeamRestrictBounds("red"), "red", true);
+const blueRestrictArea = new RestrictArea(getTeamRestrictBounds("blue"), "blue", true);
+
+export function getRestrictAreas(): RestrictArea[] {
+  return [redRestrictArea, blueRestrictArea];
+}
 
 // 创建爆炸粒子的辅助函数
 function createParticles(x: number, y: number, n: number, color: string, particles: ParticleItem[]) {
@@ -77,19 +85,6 @@ export function toggleGameSpeed(): number {
   return gameSpeed;
 }
 
-const mkShip = (
-  team: "red" | "blue",
-  name: string,
-  nameKey: string,
-  x: number,
-  y: number,
-  dir: 1 | -1,
-  minX: number,
-  maxX: number,
-  light: string,
-  dark: string,
-) => new ShipImpl({ team, name, nameKey, x, y, baseY: y, dir, minX, maxX, light, dark });
-
 // oxlint-disable-next-line max-lines-per-function
 export function initializeGame(): GameState {
   const particles: ParticleItem[] = [];
@@ -114,10 +109,10 @@ export function initializeGame(): GameState {
       this.manualFireCD = 0;
 
       this.ships = [
-        mkShip("red", "红-1", "shipHud.names.red1", 200, 120, 1, 70, 400, "#ff7b6b", "#b8322a"),
-        mkShip("red", "红-2", "shipHud.names.red2", 280, 240, -1, 70, 400, "#ff9f8a", "#c43a30"),
-        mkShip("blue", "蓝-1", "shipHud.names.blue1", 700, 360, -1, W - 330, W, "#7cc4ff", "#1d5c9e"),
-        mkShip("blue", "蓝-2", "shipHud.names.blue2", 620, 480, 1, W - 330, W, "#a5d8ff", "#2a6ba8"),
+        redRestrictArea.createShip({ team: "red", name: "红-1", nameKey: "shipHud.names.red1" }),
+        redRestrictArea.createShip({ team: "red", name: "红-2", nameKey: "shipHud.names.red2" }),
+        blueRestrictArea.createShip({ team: "blue", name: "蓝-1", nameKey: "shipHud.names.blue1" }),
+        blueRestrictArea.createShip({ team: "blue", name: "蓝-2", nameKey: "shipHud.names.blue2" }),
       ];
     },
 
@@ -218,7 +213,8 @@ export function initializeGame(): GameState {
         }
       }
       for (const s of alive) {
-        s.x = Math.max(70, Math.min(s.maxX, s.x));
+        if (s.minX !== -Infinity) s.x = Math.max(s.minX, s.x);
+        if (s.maxX !== Infinity) s.x = Math.min(s.maxX, s.x);
         s.y = Math.max(P.yMin, Math.min(P.yMax, s.y));
       }
     },
