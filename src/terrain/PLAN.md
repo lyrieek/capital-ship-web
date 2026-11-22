@@ -1,6 +1,6 @@
 # terrain 模块设计（岛屿 / 礁石 / 船厂）
 
-> 状态：**第三轮**。岛屿 / 礁石 / 船厂都是 Babylon 原生网格；舰船与地物的碰撞走 Babylon 内置碰撞；
+> 状态：**第四轮**。岛屿 / 礁石 / 船厂都是 Babylon 原生网格；舰船与地物的碰撞走 `game/collision.ts` 的纯 2D 胶囊 vs 圆；
 > 舰船遇到岛礁会**提前避让**；船厂有「同时靠海 + 靠陆」的进厂检测；小地图已经画出地形与船坞。
 
 ## 1. 为什么不用 Canvas 贴图（本模块最重要的决定）
@@ -28,11 +28,11 @@ src/terrain/
   spec.ts           // TERRAIN_SPECS：半径、高度、碰撞半径、占位配色
   layout.ts         // TerrainPlacement（含 rotation）+ DEFAULT_TERRAIN_LAYOUT + createTerrainItems()
   shipyard-zone.ts  // 船厂检测区（纯数学）：矩形、世界↔本地坐标、点是否在区内
-  field.ts          // TerrainField：isBlockedCircle / distanceToLand / checkShipyard / 避让 / pushOut
+  field.ts          // TerrainField：isBlockedCircle / distanceToLand / checkShipyard / 避让
   island.ts         // 岛屿网格 + 材质 + islandRadiusAt()（渲染与小地图共用岸线）
   reef.ts           // 礁石网格 + 材质
   shipyard.ts       // 船厂网格 + 材质（检测框就是 shipyardZoneLocal()）
-  render.ts         // createTerrainRender()：Mesh 增删、变换、光照、checkCollisions、dispose
+  render.ts         // createTerrainRender()：Mesh 增删、变换、材质冻结、dispose（光照在 babylon/scene.ts）
 ```
 
 新增一种地物 = 加 kind + 一条 spec + 一个文件 + 在 `render.ts` 的 `FACTORIES` 里登记。
@@ -101,14 +101,14 @@ rotation = 同一个方向角（本地 +X 朝水）
 
 ### 5.1 两套系统分工
 
-| 场景                   | 谁负责                                                                                                             |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 航行时贴岸、被岛挡住   | **Babylon 内置碰撞**：`scene.collisionsEnabled` + 地物 `checkCollisions` + 舰船 `ellipsoid` + `moveWithCollisions` |
-| 撞上去**之前**提前拐弯 | `TerrainField.avoidAngle()` / `avoidSide()`（本模块，纯数学）                                                      |
-| 已经插进岛里           | `TerrainField.pushOut()` 兜底（`Game.resolveCollisions()`）                                                        |
-| 炮弹落点               | 以后在 `weapons/update.ts` 调 `field.isBlocked(x, y)`                                                              |
+| 场景                   | 谁负责                                                           |
+| ---------------------- | ---------------------------------------------------------------- |
+| 航行时贴岸、被岛挡住   | **2D 碰撞**：`game/collision.ts` 的舰船胶囊 vs `TerrainField` 圆 |
+| 撞上去**之前**提前拐弯 | `TerrainField.avoidAngle()` / `avoidSide()`（本模块，纯数学）    |
+| 炮弹落点               | 以后在 `weapons/update.ts` 调 `field.isBlocked(x, y)`            |
 
-Babylon 碰撞只「阻止移动」，不会让船自己找路——所以**避让必须发生在撞上之前**，这是这一轮的核心修复。
+碰撞不再依赖 Babylon 的 Mesh 扫掠：模拟层用「胶囊 vs 圆」每帧推出重叠，渲染层只读 `ship.x/y`。
+避让仍然发生在撞上之前，避免船一头顶死在岸上。
 
 ### 5.2 提前避让
 
@@ -120,7 +120,7 @@ Babylon 碰撞只「阻止移动」，不会让船自己找路——所以**避�
 ```
 
 `avoidAngle()` 依次尝试 `0 / ±25° / ±50° / ±75° / ±100°`，返回第一个前方通畅的角度；
-全部挡住时返回期望角，交给 Babylon 碰撞兜底（至少不会卡死）。
+全部挡住时返回期望角，交给 `game/collision.ts` 的推出兜底（至少不会卡死）。
 
 **B. 自动巡航**（`ship/index.ts` 的 `applyTerrainAvoidance`）
 
@@ -141,19 +141,20 @@ baseY = y   // 把新水道记成基准航线，否则回正时会把船拽回�
 
 实测：岛 A 正前方 80 单位处，`isPathBlocked` = true，`avoidAngle` 从 -90° 偏到 -15°（+75°），成功绕开。
 
-### 5.3 深插救援
+### 5.3 贴岸推出
 
-Babylon 碰撞不会把已经插进岛里的物体推出来（被舰船互相推开、或 reset 后位置异常时仍可能插进去），
-所以 `Game.resolveCollisions()` 保留一次 `field.pushOut()`，只在「船心已经进入陆地」时触发，
-正常贴岸不会触发，不会和 Babylon 碰撞打架。
+`game/collision.ts` 的 `resolveShipTerrain()` 把船近似为「沿航向的线段 + 半舰宽」，
+逐岛求线段到圆心的最近点；重叠时把船沿法线推出去，多跑几轮处理两座岛夹角。
+`resolveCollisions()` 的顺序是：舰船互推 → 地形推出 → 边界 clamp。
+这是纯数学、可单测的；以后换成 3D 船模也不需要改这里。
 
 ## 6. 渲染管线
 
 - **渲染分组固定 1（`RG_SHIP`）**：组 0 = 海面 → 组 1 = 地物 + 舰船 → 组 2 = HUD / 特效。
 - **顶点色**：岛屿的沙滩/草地、船厂的混凝土/警示黄/亮青都烘进顶点色，一份材质搞定。
-- **光照**：`createTerrainRender` 里一盏 `HemisphericLight`，方向 `(-0.35, 0.45, -1)`（朝相机侧）。
+- **光照**：场景级 `HemisphericLight` 在 `babylon/scene.ts` 创建，方向 `(-0.35, 0.45, -1)`（朝相机侧）；地形渲染器不再自己建灯。
 - **静态优化**：`sync` 后 `freezeWorldMatrix()`；冻结后世界矩阵已算好，碰撞系统直接可用。
-- **碰撞开关**：`mesh.checkCollisions = spec.solid`，船厂 `solid = false`（船坞必须能开进去）。
+- **碰撞数据**：地物不挂 Babylon 碰撞；`solid` 只决定它是否参与 `TerrainField` 的 2D 碰撞（船厂 `solid = false`，船坞可进入）。
 
 ## 7. 小地图（`components/Minimap.tsx`）
 
@@ -171,11 +172,11 @@ Babylon 碰撞不会把已经插进岛里的物体推出来（被舰船互相推
 5. **炮弹被陆地挡下**：`weapons/update.ts` 落点判定前加一次 `field.isBlocked(x, y)`。
 6. **进厂玩法**：把 `checkShipyard()` 接进 Game（维修 / 补给 / 计时），并在 HUD 上提示「靠海 ✓ 靠陆 ✗」。
 7. **playground**：`TestTerrain.tsx` + `App.tsx` 路由 + `locales` 词条。
-8. **性能**：地物多时改 thin instance 或静态合批；`moveWithCollisions` 每帧对每个障碍物扫掠，多了要按区域过滤。
+8. **性能**：地物多时改 thin instance 或静态合批；`game/collision.ts` 目前是每帧全量遍历地物，地物多了要加空间哈希/网格索引。
 
 ## 9. 结构重构建议（本次仍未做）
 
-`game/world.ts` → `src/world.ts`、`P` → `src/config/`、`paintShip` → `ship/texture.ts`、
+`game/world.ts` → `src/world.ts`、`P` → `src/config/`、`paintHull` → `ship/texture.ts`、
 `babylon/sprite.ts` 反向依赖、`ship/ship.d.ts`。这些是纯搬迁 + 改 import，建议单独一轮。
 
 ## 10. 约定

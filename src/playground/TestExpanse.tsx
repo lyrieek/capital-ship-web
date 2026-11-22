@@ -120,9 +120,6 @@ function createOceanScene(
     if (frames % 15 === 0) onFps(Math.round(babylon.engine.getFps()));
   });
 
-  const observer = new ResizeObserver(() => babylon.engine.resize());
-  observer.observe(canvas);
-
   return {
     engine: babylon.engine,
     surface,

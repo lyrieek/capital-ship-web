@@ -2,7 +2,7 @@ import type { Mesh, Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Control, Rectangle, TextBlock } from "@babylonjs/gui";
 import i18n from "i18next";
 import "../i18n";
-import { sendGuiLayerToBack } from "../babylon/gui";
+import { registerGuiLayer, unregisterGuiLayer } from "../babylon/gui";
 import type { Ship } from "./ship";
 
 const HUD_WIDTH = 104;
@@ -147,7 +147,7 @@ function createHudControls(ship: Ship): HudControls {
 
 export function createShipHudLayer(scene: Scene, designWidth: number): ShipHudLayer {
   const root = AdvancedDynamicTexture.CreateFullscreenUI("shipHudUi", true, scene);
-  sendGuiLayerToBack(root);
+  registerGuiLayer(root, "shipHud");
   root.idealWidth = designWidth;
   root.disablePicking = true;
 
@@ -265,6 +265,7 @@ export function createShipHudLayer(scene: Scene, designWidth: number): ShipHudLa
     dispose: () => {
       i18n.off("languageChanged", refreshAll);
       for (let index = huds.length - 1; index >= 0; index -= 1) huds[index].dispose();
+      unregisterGuiLayer(root);
       root.dispose();
     },
   };

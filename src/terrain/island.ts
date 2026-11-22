@@ -97,11 +97,6 @@ export function createIslandMesh(name: string, scene: Scene, spec: TerrainSpec, 
 
   const normals: number[] = [];
   VertexData.ComputeNormals(positions, indices, normals);
-  // 绕序在左手系 / 右手系下算出来的法线朝向可能相反；
-  // 这里统一翻到朝相机（-Z）一侧，否则整岛会因为背光而发黑
-  if (normals[2] > 0) {
-    for (let i = 2; i < normals.length; i += 3) normals[i] = -normals[i];
-  }
 
   const data = new VertexData();
   data.positions = positions;
@@ -111,6 +106,11 @@ export function createIslandMesh(name: string, scene: Scene, spec: TerrainSpec, 
 
   const mesh = new Mesh(name, scene);
   data.applyToMesh(mesh);
+  // 法线朝向：相机在 -Z 一侧，需要法线朝 -Z。
+  // 用全部法线的 Z 分量之和判断方向，比只看第一个法线稳；反了就交给 Babylon 同时翻转法线和绕序。
+  let normalZ = 0;
+  for (let i = 2; i < normals.length; i += 3) normalZ += normals[i];
+  if (normalZ > 0) mesh.flipFaces(true);
   // 沙滩 / 草地已经烘进顶点色，材质只要「白色 + 受光」
   mesh.useVertexColors = true;
   return mesh;

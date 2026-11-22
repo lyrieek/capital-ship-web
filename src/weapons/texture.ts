@@ -7,7 +7,8 @@ export function toCanvas2D(texture: DynamicTexture): CanvasRenderingContext2D {
 }
 
 /**
- * 通用的「自发光贴图」材质：忽略光照，颜色直接来自贴图，支持透明
+ * 通用的「自发光贴图」材质：忽略光照，颜色直接来自贴图，支持透明。
+ * 2D 精灵统一不写深度：叠放顺序用 alphaIndex / renderingGroupId 表达，避免透明像素互相遮挡。
  * @param name 材质名
  * @param texture 贴图
  * @param scene Babylon 场景
@@ -25,5 +26,6 @@ export function createSpriteMaterial(name: string, texture: DynamicTexture, scen
   material.backFaceCulling = false;
   material.useAlphaFromDiffuseTexture = true;
   material.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
+  material.disableDepthWrite = true;
   return material;
 }

@@ -3,7 +3,7 @@ import type { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Button, Control, StackPanel, TextBlock } from "@babylonjs/gui";
 import { useTranslation } from "react-i18next";
 import { getGameSpeed, setGameSpeed } from "../game/Game";
-import { insertGuiLayerBeforeModels } from "../babylon/gui";
+import { registerGuiLayer, unregisterGuiLayer } from "../babylon/gui";
 
 export interface HudProps {
   scene: Scene | null;
@@ -70,7 +70,7 @@ export default function Hud({ scene, allow2x }: HudProps) {
   useEffect(() => {
     if (!scene) return;
     const root = AdvancedDynamicTexture.CreateFullscreenUI("hudUi", true, scene);
-    insertGuiLayerBeforeModels(root);
+    registerGuiLayer(root, "hud");
 
     const title = makeTextBlock("hudTitle", "#b4d7f5", "600", 15, "left", "top", 22, 32, "20%", 20);
     root.addControl(title);
@@ -117,6 +117,7 @@ export default function Hud({ scene, allow2x }: HudProps) {
     speedBtnRef.current = speedBtn;
 
     return () => {
+      unregisterGuiLayer(root);
       root.dispose();
       titleRef.current = null;
       weaponRef.current = null;

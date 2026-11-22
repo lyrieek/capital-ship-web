@@ -57,8 +57,10 @@ export function createOrthoCamera(scene: Scene, options: OrthoCameraOptions): Fr
   camera.orthoRight = options.width / 2;
   camera.orthoTop = options.height / 2;
   camera.orthoBottom = -options.height / 2;
-  camera.minZ = options.minZ ?? 0.1;
-  camera.maxZ = options.maxZ ?? 1000;
+  // 正交俯视只用到相机到场景的一小段深度：收紧 near/far 能显著提高深度精度。
+  // 相机在 positionZ（默认 -100），场景对象大概在 z = [-34, 0]，所以 [1, 200] 足够。
+  camera.minZ = options.minZ ?? 1;
+  camera.maxZ = options.maxZ ?? 200;
   scene.activeCamera = camera;
   return camera;
 }

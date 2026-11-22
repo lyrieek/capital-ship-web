@@ -1,14 +1,13 @@
-// 地物查询：位置是否被陆地占用、圆形刚体怎么被陆地推开、船厂检测、舰船避让。
+// 地物查询：位置是否被陆地占用、船厂检测、舰船避让。
 //
 // 这一层刻意不 import 任何 Babylon 类型：
-// 摆船（RestrictArea）、舰船碰撞（Game.resolveCollisions）、舰船避让（ship/index.ts、movement.ts）、
+// 摆船（RestrictArea）、2D 碰撞（game/collision.ts）、舰船避让（ship/index.ts、movement.ts）、
 // 炮弹落点（weapons）都只依赖它。
-// 以后换渲染方式（网格 / 贴图 / 分块加载）时，玩法代码一行都不用动。
+// 以后换渲染方式（网格 / 贴图 / 3D 船模）时，玩法代码一行都不用动。
 //
-// 两套碰撞的分工：
-//   - 航行时贴岸：Babylon 内置碰撞（mesh.moveWithCollisions），见 game/render.ts；
-//   - 这里负责「提前拐弯」（avoidAngle / avoidSide）和「插进去以后捞出来」（pushOut）。
-//     Babylon 碰撞只会把车挡住，不会让车自己找路，所以避让必须在撞上去之前就发生。
+// 碰撞分工：
+//   - 贴岸推出：game/collision.ts（舰船胶囊 vs 地形圆）；
+//   - 提前拐弯：这里（avoidAngle / avoidSide），避免船一头顶死在岸上。
 import { getTerrainSpec } from "./spec";
 import { isInShipyardZone } from "./shipyard-zone";
 import type { TerrainBounds, TerrainItem } from "./types";
@@ -107,35 +106,6 @@ export class TerrainField {
     // 靠陆：离最近的岸线要足够近
     const nearLand = this.distanceToLand(x, y) <= QUAY_RANGE;
     return { inZone, onWater, nearLand, docked: inZone && onWater && nearLand };
-  }
-
-  /**
-   * 圆形刚体与陆地重叠时，把它沿径向推到岸外
-   * 推两轮：相邻两座岛之间可能一次推不干净。
-   * 仅用于「船心已经插进岛里」的兜底救援，正常航行交给 Babylon 碰撞。
-   */
-  pushOut(x: number, y: number, radius: number): { x: number; y: number } {
-    let px = x;
-    let py = y;
-    for (let pass = 0; pass < 2; pass++) {
-      for (const item of this.items) {
-        const r = terrainRadius(item) + radius;
-        if (r <= 0) continue;
-        let dx = px - item.x;
-        let dy = py - item.y;
-        let distance = Math.hypot(dx, dy);
-        if (distance >= r) continue;
-        // 正好落在圆心：任取一个方向推出，避免除零
-        if (distance < 0.001) {
-          dx = 1;
-          dy = 0;
-          distance = 1;
-        }
-        px = item.x + (dx / distance) * r;
-        py = item.y + (dy / distance) * r;
-      }
-    }
-    return { x: px, y: py };
   }
 
   /** 在矩形范围内随机找一个不被陆地占用的点；尝试 tries 次仍找不到则返回 null */

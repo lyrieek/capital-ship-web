@@ -1,7 +1,8 @@
 // 舰船选择、选中圈与手动攻击：主游戏和 playground 共用
-import { ActionManager, Color3, ExecuteCodeAction, KeyboardEventTypes, MeshBuilder, StandardMaterial, type Mesh, type Scene } from "@babylonjs/core";
+import { Color3, KeyboardEventTypes, MeshBuilder, PointerEventTypes, StandardMaterial, type Mesh, type Scene } from "@babylonjs/core";
 import type { Ship } from "../ship/ship";
-import { H, W } from "./utils";
+import { scenePointToWorld } from "./camera-focus";
+import { isUiBlocking } from "./ui-state";
 
 export interface AttackOrder {
   ship: Ship;
@@ -101,11 +102,14 @@ export function createSelectionRing(scene: Scene, ship: Ship, renderingGroupId: 
     },
     scene,
   );
-  // 躺平到 XY 平面面对相机；X 轴完整，Y 轴按宽度压扁
+  // 躺平到 XY 平面面对相机。世界矩阵是 Scale→Rotation→Translation，
+  // rotation.x = PI/2 后本地 Z → 世界 Y，所以「按船宽压扁」要改 scaling.z。
   mesh.rotation.x = Math.PI / 2;
-  mesh.scaling.set(1, (ship.wid * 2) / diameter, 1);
+  mesh.scaling.set(1, 1, (ship.wid * 2) / diameter);
   mesh.renderingGroupId = renderingGroupId;
   mesh.isPickable = false;
+  // 与舰体同组内靠 alphaIndex 排在舰体下面（0 → 1 → 炮塔 2）
+  mesh.alphaIndex = 0;
 
   const material = new StandardMaterial(`shipRingMaterial_${ship.name}`, scene);
   material.diffuseColor = Color3.FromHexString("#4ade80");
@@ -128,75 +132,53 @@ export function createSelectionRing(scene: Scene, ship: Ship, renderingGroupId: 
   };
 }
 
-function pickWorldPoint(scene: Scene, pointerX: number, pointerY: number): { x: number; y: number } | null {
-  const picked = scene.pick(pointerX, pointerY)?.pickedPoint;
-  if (!picked) return null;
-  return { x: picked.x + W / 2, y: H / 2 - picked.y };
+// 拾取当前指针下的舰船：只有挂到舰体上的 metadata 才算可点对象。
+// 海面 / 地形 / 炮塔都不参与，避免给每个 Mesh 挂 ActionManager。
+function pickShip(scene: Scene): Ship | null {
+  const picked = scene.pick(scene.pointerX, scene.pointerY, (mesh) => mesh.isPickable && mesh.metadata !== null && mesh.metadata !== undefined);
+  return (picked?.pickedMesh?.metadata as Ship | undefined) ?? null;
 }
 
-// 舰船点击：左键选择（Shift 多选）、可选右键移动、悬停光标
-export function bindShipSelection(scene: Scene, mesh: Mesh, ship: Ship, selection: ShipSelection, options: ShipInteractionOptions = {}): void {
-  const manager = new ActionManager(scene);
-  mesh.actionManager = manager;
+/**
+ * 场景级指针输入：左键选择（Shift 多选）、右键移动、悬停光标。
+ * 用 POINTERDOWN 而不是 ActionManager 的 PICK/TAP：
+ * - 快速连点/Shift 多选不会被 Babylon 的双击分类吞掉；
+ * - 以后加框选/拖拽/指令队列时，可以直接在这一个状态机里扩展。
+ * 返回解绑函数。
+ */
+export function bindPointerInput(scene: Scene, selection: ShipSelection, options: ShipInteractionOptions = {}): () => void {
+  const observer = scene.onPointerObservable.add((info) => {
+    // Modal / 遮罩打开时暂停场景输入
+    if (isUiBlocking()) {
+      if (info.type === PointerEventTypes.POINTERMOVE) scene.hoverCursor = "default";
+      return;
+    }
 
-  manager.registerAction(
-    new ExecuteCodeAction(ActionManager.OnPickTrigger, (event) => {
-      const source = event.sourceEvent as PointerEvent | undefined;
-      if (source && source.button !== 0) return;
-      selection.select(ship, source?.shiftKey ?? false);
-    }),
-  );
+    if (info.type === PointerEventTypes.POINTERMOVE) {
+      scene.hoverCursor = pickShip(scene) ? "pointer" : "default";
+      return;
+    }
 
-  // 两次点击间隔很短时 Babylon 会判为双击、不再触发 OnPickTrigger；
-  // 这里补一个双击触发，避免快速 Shift 多选时第二次点击被吞掉。
-  manager.registerAction(
-    new ExecuteCodeAction(ActionManager.OnDoublePickTrigger, (event) => {
-      const source = event.sourceEvent as PointerEvent | undefined;
-      if (source && source.button !== 0) return;
-      selection.select(ship, source?.shiftKey ?? false);
-    }),
-  );
+    if (info.type !== PointerEventTypes.POINTERDOWN) return;
+    const event = info.event as PointerEvent;
 
-  if (options.onMove) {
-    manager.registerAction(
-      new ExecuteCodeAction(ActionManager.OnRightPickTrigger, (event) => {
-        const point = pickWorldPoint(scene, event.pointerX, event.pointerY);
-        if (point) options.onMove?.(point.x, point.y);
-      }),
-    );
-  }
+    if (event.button === 0) {
+      const ship = pickShip(scene);
+      if (ship) selection.select(ship, event.shiftKey);
+      else selection.clear();
+      return;
+    }
 
-  manager.registerAction(
-    new ExecuteCodeAction(ActionManager.OnPointerOverTrigger, () => {
-      scene.hoverCursor = "pointer";
-    }),
-  );
+    if (event.button === 2 && options.onMove) {
+      const point = scenePointToWorld(scene, scene.pointerX, scene.pointerY);
+      if (point) options.onMove(point.x, point.y);
+    }
+  });
 
-  manager.registerAction(
-    new ExecuteCodeAction(ActionManager.OnPointerOutTrigger, () => {
-      scene.hoverCursor = "default";
-    }),
-  );
-}
-
-// 海面点击：左键清除选择，可选右键下达移动指令
-export function bindOceanSelection(scene: Scene, mesh: Mesh, selection: ShipSelection, options: ShipInteractionOptions = {}): void {
-  // 海面本身默认不参与拾取，这里需要它来接住空白处的点击
-  mesh.isPickable = true;
-
-  const manager = new ActionManager(scene);
-  mesh.actionManager = manager;
-
-  manager.registerAction(new ExecuteCodeAction(ActionManager.OnLeftPickTrigger, () => selection.clear()));
-
-  if (options.onMove) {
-    manager.registerAction(
-      new ExecuteCodeAction(ActionManager.OnRightPickTrigger, (event) => {
-        const point = pickWorldPoint(scene, event.pointerX, event.pointerY);
-        if (point) options.onMove?.(point.x, point.y);
-      }),
-    );
-  }
+  return () => {
+    scene.onPointerObservable.remove(observer);
+    scene.hoverCursor = "default";
+  };
 }
 
 // F 键：对当前选择执行一次攻击指令

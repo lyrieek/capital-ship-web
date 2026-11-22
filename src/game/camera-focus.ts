@@ -1,6 +1,6 @@
 // 相机视口控制：大地图只显示一块 1600 x 900 的窗口，相机焦点跟随战场，
 // 也支持从 minimap / 调试页直接跳转到世界坐标。
-import { Vector3, type FreeCamera, type Scene } from "@babylonjs/core";
+import { Matrix, Plane, Vector3, type FreeCamera, type Scene } from "@babylonjs/core";
 import type { Ship } from "../ship/ship";
 import { clamp } from "./utils";
 import { VIEW_H, VIEW_W, WORLD_H, WORLD_W } from "./world";
@@ -57,11 +57,41 @@ export function resetCameraFocus(): void {
   manualHold = 0;
 }
 
-// 屏幕坐标 → 世界坐标。相机是正交俯视、倾斜动画默认关闭，
-// 因此可以用焦点 + 视口尺寸直接换算（比 pick 更稳定，海面未拾取时也能用）。
-export function screenToWorld(clientX: number, clientY: number, rect: DOMRect): CameraFocus {
-  const u = rect.width > 0 ? (clientX - rect.left) / rect.width : 0.5;
-  const v = rect.height > 0 ? (clientY - rect.top) / rect.height : 0.5;
+// 海平面：世界单位里 z = 0 的平面。所有玩法坐标都落在这里。
+const SEA_PLANE = new Plane(0, 0, 1, 0);
+
+/**
+ * 画布坐标（相对 canvas 左上、CSS 像素）→ 世界坐标。
+ * 用射线与海平面求交，而不是按相机焦点手算投影：相机倾斜/摆动时也准确。
+ * 返回 null 表示射线与海平面平行（正常俯视/斜视不会发生）。
+ */
+export function scenePointToWorld(scene: Scene, x: number, y: number): CameraFocus | null {
+  const camera = scene.activeCamera;
+  if (!camera) return null;
+
+  const ray = scene.createPickingRay(x, y, Matrix.Identity(), camera);
+  const distance = ray.intersectsPlane(SEA_PLANE);
+  if (distance === null) return null;
+
+  const point = ray.direction.scaleToRef(distance, new Vector3()).addInPlace(ray.origin);
+  return {
+    x: clamp(point.x + WORLD_W / 2, 0, WORLD_W),
+    y: clamp(WORLD_H / 2 - point.y, 0, WORLD_H),
+  };
+}
+
+/**
+ * 屏幕（client）坐标 → 世界坐标。
+ * 这是 UI 事件的首选入口；只有场景/相机还没就绪时才回退到焦点换算。
+ */
+export function screenToWorld(scene: Scene, clientX: number, clientY: number, rect: DOMRect): CameraFocus {
+  const localX = clientX - rect.left;
+  const localY = clientY - rect.top;
+  const point = scenePointToWorld(scene, localX, localY);
+  if (point) return point;
+
+  const u = rect.width > 0 ? localX / rect.width : 0.5;
+  const v = rect.height > 0 ? localY / rect.height : 0.5;
   return {
     x: clamp(focus.x + (u - 0.5) * VIEW_W, 0, WORLD_W),
     y: clamp(focus.y + (v - 0.5) * VIEW_H, 0, WORLD_H),

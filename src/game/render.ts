@@ -1,37 +1,34 @@
 // Babylon.js 渲染层：把 2D 海战状态同步到「正交俯视」场景
 // 相机固定在 -Z 方向俯视 XY 平面，世界单位与游戏像素坐标一一对应。
-// 后续还需优化 舰船/炮弹/粒子改为共享图集的 InstancedMesh/thin instance
-import { Color3, DynamicTexture, type Engine, type FreeCamera, type Mesh, type Scene, type StandardMaterial, Vector3 } from "@babylonjs/core";
-import { paintParticle, paintShip } from "./textures";
+// 舰船仍是独立 Mesh；炮弹已用 thin instance 合批，粒子用 SolidParticleSystem。
+import type { Engine, FreeCamera, Scene } from "@babylonjs/core";
 import { createOceanSurface, getOceanKind, type OceanSurface } from "../expanse";
 import { createWeaponRender, type WeaponRender } from "../weapons";
 import { createTerrainRender, getTerrainField, type TerrainRender } from "../terrain";
-import type { GameState, ParticleItem } from "./types";
+import type { GameState } from "./types";
 import type { Ship } from "../ship/ship";
 import { H, W } from "./utils";
 import { VIEW_H, VIEW_W } from "./world";
 import { getCameraFocus, resetCameraFocus, updateCameraFocus } from "./camera-focus";
-import { bindOceanSelection, bindShipSelection, ShipSelection } from "./selection";
+import { bindPointerInput, ShipSelection } from "./selection";
 import { issueSelectionSail } from "./movement";
 import { RestrictArea, getTeamRestrictBounds } from "./RestrictArea";
-import { createBabylonScene, createPlane, createSpriteMaterial, toCanvas2D, updateCameraEffect, worldToScene } from "../babylon";
+import { createBabylonScene, updateCameraEffect, worldToScene } from "../babylon";
+import { createParticleFx, type ParticleFx } from "./particle-fx";
 import { createShipHudLayer, type ShipHudLayer } from "../ship/hud";
 import {
   createShipVisual,
   disposeNavLine,
+  disposeShipTurrets,
   type ShipVisual,
-  SHIP_Z,
-  RING_Z,
-  SHIP_TEX_SCALE,
   RG_SHIP,
+  syncShipTurrets,
   updateShipNavigationLine,
 } from "../ship/render-visual";
 
-// 平面 Mesh 类型（避免为仅作类型的 Mesh 引入额外 import）
-type PlaneMesh = Mesh;
-
-// 渲染分组（Babylon 最多 4 组 0..3），组间自动清深度，按组顺序层叠；
-// 不能依赖 Z 距离排序：正交相机下远处水面到相机的距离反而更近，会盖住舰船。
+// 渲染分组（Babylon 最多 4 组 0..3），组间自动清深度，按组顺序层叠：
+// 0 = 海面；1 = 地物 + 舰船/选中圈/炮塔（组内 alphaIndex 排序）；2 = 弹药/粒子/导航线。
+// 世界 Z 只表示真实 3D 高度（地形）和必要的共面深度偏移，不再当图层序号。
 const RG_WATER = 0;
 const RG_FX = 2;
 
@@ -39,7 +36,8 @@ const RG_FX = 2;
 let engine: Engine | null = null;
 let scene: Scene | null = null;
 
-let particleTexture: DynamicTexture | null = null;
+// 粒子表现（SolidParticleSystem：所有粒子共用一个 Mesh + 一份材质）
+let particleFx: ParticleFx | null = null;
 // 海面（海浪贴图 + 材质 + 平面），具体绘制在 src/expanse/ocean.ts
 let oceanSurface: OceanSurface | null = null;
 // 地物（岛屿 / 礁石 / 建筑），具体实现见 src/terrain
@@ -51,9 +49,16 @@ let weaponRender: WeaponRender | null = null;
 
 // 当前对局的选择状态（主游戏 / playground 共用同一套选择逻辑）
 let shipSelection: ShipSelection | null = null;
+// 场景级指针输入的解绑函数
+let unbindPointer: (() => void) | null = null;
 
 export function getShipSelection(): ShipSelection | null {
   return shipSelection;
+}
+
+/** 重开一局时清空仍在飞的粒子 */
+export function clearParticles(): void {
+  particleFx?.clear();
 }
 
 // 右键：让当前选中的舰船驶向落点
@@ -71,18 +76,6 @@ let restrictError: string | null = null;
 export function getRestrictError(): string | null {
   return restrictError;
 }
-
-// 炮管转动 / 舰体转向需要重绘舰船贴图；变化太小时跳过，避免每帧都重绘
-const REPAINT_STEP = 0.02;
-function angleMoved(current: number, last: number): boolean {
-  return Math.abs(Math.atan2(Math.sin(current - last), Math.cos(current - last))) > REPAINT_STEP;
-}
-function turretNeedsRepaint(ship: Ship, visual: ShipVisual): boolean {
-  return angleMoved(ship.aimAngle, visual.lastAim) || angleMoved(ship.angle, visual.lastAngle);
-}
-
-// 粒子使用对象池复用 Mesh，避免频繁创建销毁
-const particlePool: PlaneMesh[] = [];
 
 function createWater() {
   oceanSurface = createOceanSurface({
@@ -105,53 +98,6 @@ function createTerrain() {
   if (!field) return;
   terrainRender = createTerrainRender({ scene: scene!, renderingGroupId: RG_SHIP });
   terrainRender.sync(field.items);
-}
-
-function createParticleResources() {
-  particleTexture = new DynamicTexture("particleTexture", { width: 32, height: 32 }, scene!, true);
-  paintParticle(toCanvas2D(particleTexture), 32, 32);
-  particleTexture.update();
-}
-
-function poolGet(pool: PlaneMesh[], index: number, create: (index: number) => PlaneMesh): PlaneMesh {
-  const existing = pool[index];
-  if (existing) return existing;
-  const created = create(index);
-  pool[index] = created;
-  return created;
-}
-
-// 舰船 vs 地物的碰撞：用 Babylon 内置碰撞系统（scene.collisionsEnabled + mesh.checkCollisions
-// + mesh.ellipsoid + mesh.moveWithCollisions），不是物理引擎，也不用手搓圆碰撞。
-//
-// 为什么放在渲染层：moveWithCollisions 直接操作 Mesh，而 ship.x/y 才是权威数据。
-// 所以这里做的是「游戏状态 → 本帧位移 → Babylon 修正 mesh → 修正结果写回 ship.x/y」。
-//
-// 必须在 syncShips 之前调用：syncShips 会把 mesh 位置重置成 ship.x/y，
-// 那时 mesh 已经和目标位置重合，moveWithCollisions 的位移恒为 0，等于没做碰撞。
-function resolveTerrainCollisions(game: GameState): void {
-  for (const ship of game.ships) {
-    if (!ship.alive) continue;
-    const visual = shipVisuals.get(ship);
-    // 刚生成、还没有可视对象的舰船不参与：它的 mesh 位置是这一帧才同步的
-    if (!visual) continue;
-
-    // 上一帧同步之后，mesh 位置 == 舰船上一帧的位置，所以差值就是本帧位移
-    const meshWorldX = visual.mesh.position.x + W / 2;
-    const meshWorldY = H / 2 - visual.mesh.position.y;
-    const dx = ship.x - meshWorldX;
-    const dy = ship.y - meshWorldY;
-    if (dx === 0 && dy === 0) continue;
-
-    // 碰撞是基于 mesh 世界矩阵做扫掠的，矩阵必须是最新的
-    visual.mesh.computeWorldMatrix(true);
-    // 场景坐标 Y 轴方向与游戏坐标相反
-    visual.mesh.moveWithCollisions(new Vector3(dx, -dy, 0));
-
-    // 修正结果写回游戏状态：本帧后续的索敌、开火、小地图都读 ship.x/y
-    ship.x = visual.mesh.position.x + W / 2;
-    ship.y = H / 2 - visual.mesh.position.y;
-  }
 }
 
 function syncShips(game: GameState) {
@@ -177,7 +123,6 @@ function syncShips(game: GameState) {
       area?.applyTo(ship);
 
       visual = createShipVisual(ship, scene!, hudLayer, 1);
-      if (shipSelection) bindShipSelection(scene!, visual.mesh, ship, shipSelection, { onMove: moveSelection });
       shipVisuals.set(ship, visual);
     }
 
@@ -195,73 +140,40 @@ function syncShips(game: GameState) {
       disposeNavLine(visual);
     }
 
-    visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
+    visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
     visual.mesh.rotation.z = -ship.angle;
-    visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y, RING_Z));
+    visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
 
     const flash = 1 + ship.hitFlash * 0.9;
     visual.material.emissiveColor.set(flash, flash, flash);
+    visual.turretMaterial.emissiveColor.set(flash, flash, flash);
 
-    if (
-      visual.lastHp !== ship.hp ||
-      visual.lastState !== ship.state ||
-      visual.lastAlive !== alive ||
-      visual.lastRecoil !== ship.recoil ||
-      turretNeedsRepaint(ship, visual)
-    ) {
-      paintShip(toCanvas2D(visual.texture), ship, SHIP_TEX_SCALE * visual.shipSize);
-      visual.texture.update();
-      visual.lastHp = ship.hp;
-      visual.lastState = ship.state;
-      visual.lastAlive = alive;
-      visual.lastRecoil = ship.recoil;
-      visual.lastAim = ship.aimAngle;
-      visual.lastAngle = ship.angle;
-    }
+    // 炮塔转向 / 后坐只改变换，舰体贴图创建后不再重绘
+    syncShipTurrets(visual, ship);
 
     visual.hud.sync(ship);
   }
 
   for (const [ship, visual] of shipVisuals) {
     if (seen.has(ship)) continue;
+    disposeShipTurrets(visual);
     visual.mesh.dispose();
     visual.hud.dispose();
     visual.ring.dispose();
     visual.texture.dispose();
     disposeNavLine(visual);
-    visual.lineMaterial.dispose();
     shipVisuals.delete(ship);
   }
-}
-
-function createParticleMesh(index: number): PlaneMesh {
-  const mesh = createPlane(`particle_${index}`, 1, 1, scene!, RG_FX);
-  mesh.material = createSpriteMaterial(`particleMaterial_${index}`, particleTexture!, scene!);
-  return mesh;
-}
-
-function syncParticles(particles: ParticleItem[]) {
-  let index = 0;
-  for (const particle of particles) {
-    const mesh = poolGet(particlePool, index, createParticleMesh);
-    const life = Math.max(0, particle.life / particle.maxLife);
-    const material = mesh.material as StandardMaterial;
-    material.emissiveColor = Color3.FromHexString(particle.color);
-    material.alpha = life;
-    mesh.position.copyFrom(worldToScene(particle.x, particle.y));
-    mesh.scaling.copyFromFloats(particle.size * 2 * life, particle.size * 2 * life, 1);
-    mesh.setEnabled(true);
-    index++;
-  }
-  for (; index < particlePool.length; index++) particlePool[index].setEnabled(false);
 }
 
 export function disposeRender() {
   restrictError = null;
   shipVisuals.clear();
+  unbindPointer?.();
+  unbindPointer = null;
   shipSelection = null;
-  particlePool.length = 0;
-  particleTexture = null;
+  particleFx?.dispose();
+  particleFx = null;
   shipHudLayer?.dispose();
   shipHudLayer = null;
   oceanSurface?.dispose();
@@ -298,10 +210,12 @@ export function initRender(canvas: HTMLCanvasElement): Engine {
   // 相机视口仍是 1600 x 900，初始对准地图中心
   resetCameraFocus();
 
+  // 场景级指针状态机：选择 / 右键移动 / hover；只绑定一次，不随舰船数量增长
+  unbindPointer = bindPointerInput(scene, selection, { onMove: moveSelection });
+
   shipHudLayer = createShipHudLayer(scene, VIEW_W);
   createWater();
   createTerrain();
-  if (oceanSurface) bindOceanSelection(scene, oceanSurface.mesh, selection, { onMove: moveSelection });
 
   // 先定义地图行动限制区（按阵营），再画船；限制区虚线框在此一次性画出。
   // 限制区默认会避开地物：摆船时船不会落在岛上。
@@ -314,7 +228,7 @@ export function initRender(canvas: HTMLCanvasElement): Engine {
     worldHeight: H,
     renderingGroupId: RG_FX,
   });
-  createParticleResources();
+  particleFx = createParticleFx(scene, RG_FX);
   return engine;
 }
 
@@ -328,10 +242,8 @@ export function renderGame(game: GameState, dt = 1 / 60) {
   const kind = getOceanKind();
   if (oceanSurface && oceanSurface.kind !== kind) oceanSurface.setKind(kind);
   oceanSurface?.refresh(game.time, H / 2 - getCameraFocus().y);
-  // 舰船与岛礁的碰撞（Babylon 内置），必须在同步网格之前做，见函数注释
-  resolveTerrainCollisions(game);
   syncShips(game);
   weaponRender?.sync(game.projectiles);
-  syncParticles(game.particles);
+  particleFx?.sync(dt);
   scene.render();
 }

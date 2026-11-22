@@ -1,45 +1,45 @@
 // DynamicTexture 的矢量绘制：沿用原有 Canvas 2D 画法，只是绘制到贴图上下文上
-import { paintCannonTurret } from "../weapons";
 import type { Ship } from "../ship/ship";
 
 // 海水（海浪）的绘制已抽离到 src/expanse/ocean.ts
 // 炮弹 / 鱼雷的绘制已抽离到 src/weapons/cannon.ts、src/weapons/torpedo.ts
+// 炮塔的绘制已抽离到 src/weapons/launcher.ts，由 ship/render-visual.ts 单独作成子 Mesh
 
-// 舰船贴图上下额外的透明留白（世界单位，单侧）。
-// 炮塔绘制在贴图内部，炮管转到接近垂直时需要这段空间，否则会被纹理边界裁掉。
-export const SHIP_TEX_PAD = 9;
+// 舰体船首段的长度（世界单位，shipSize = 1 时）
+export const SHIP_BOW = 26;
 
-/**
- * 绘制舰船贴图
- * TODO: 炮塔/开火朝向、甲板投影等细节（命中闪白已在同步时用自发光增亮实现）
- */
-// 绘制一门舰炮：圆形炮座 + 炮管 + 炮口，recoil 控制炮管后坐偏移
-function paintCannon(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  angle: number,
-  radius: number,
-  barrelLen: number,
-  light: string,
-  dark: string,
-  recoil: number,
-): void {
-  paintCannonTurret(ctx, x, y, angle, radius, barrelLen, light, dark, recoil);
+// 主炮：炮座半径 / 炮管长度（世界单位，shipSize = 1 时）
+export const MAIN_TURRET_RADIUS = 9;
+export const MAIN_TURRET_BARREL = 21;
+
+// 尾部主炮比舰首炮小一圈：渲染时复用主炮贴图并整体缩放
+export const REAR_TURRET_RADIUS = 6.5;
+export const REAR_TURRET_SCALE = REAR_TURRET_RADIUS / MAIN_TURRET_RADIUS;
+
+/** 主炮在舰体本地坐标里的 X 偏移（正向为舰首） */
+export function mainTurretOffset(shipLength: number): number {
+  return shipLength / 2 - SHIP_BOW - MAIN_TURRET_RADIUS * 0.6;
 }
 
-export function paintShip(ctx: CanvasRenderingContext2D, ship: Ship, scale: number): void {
+/** 尾部主炮在舰体本地坐标里的 X 偏移 */
+export function rearTurretOffset(shipLength: number): number {
+  return -shipLength / 2 + SHIP_BOW + REAR_TURRET_RADIUS * 0.7;
+}
+
+/**
+ * 绘制舰体贴图（不含炮塔）。
+ * 炮塔是可转动的零件，单独画在自己的贴图上并作为子 Mesh 跟随舰体，
+ * 这样炮管转动只需要改 TransformNode 的旋转，不用每帧重绘整张舰体贴图。
+ */
+export function paintHull(ctx: CanvasRenderingContext2D, ship: Ship, scale: number): void {
   const length = ship.len * scale;
   const width = ship.wid * scale;
-  // 贴图上下留白：炮管转到垂直方向时不会被纹理边界截断
-  const height = width + 2 * SHIP_TEX_PAD * scale;
-  const bow = 26 * scale;
-  const recoil = ship.recoil;
+  const bow = SHIP_BOW * scale;
 
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
   ctx.save();
-  ctx.translate(length / 2, height / 2);
+  ctx.translate(length / 2, width / 2);
 
   const points: [number, number][] = [
     [-length / 2, -width / 2],
@@ -69,20 +69,6 @@ export function paintShip(ctx: CanvasRenderingContext2D, ship: Ship, scale: numb
   ctx.fillRect(-4 * scale, -width / 2 + 6 * scale, 18 * scale, width - 12 * scale);
   ctx.fillStyle = "#1b2733";
   ctx.fillRect(-24 * scale, -width / 2 + 2 * scale, 6 * scale, width - 4 * scale);
-
-  // ===== 主炮：舰首 1 门，随 aimAngle 转向目标 =====
-  // aimAngle 是世界角度；贴图随舰体一起旋转，因此要减去舰体朝向换算成局部角度
-  const turretR = 9 * scale;
-  const turretBarrel = 21 * scale;
-  const turretX = length / 2 - bow - turretR * 0.6;
-  const turretAngle = ship.aimAngle - ship.angle;
-  paintCannon(ctx, turretX, 0, turretAngle, turretR, turretBarrel, ship.light, ship.dark, recoil);
-
-  // ===== 尾部主炮：固定朝后，只保留 1 门 =====
-  const rearR = 6.5 * scale;
-  const rearBarrel = 15 * scale;
-  const rearX = -length / 2 + bow + rearR * 0.7;
-  paintCannon(ctx, rearX, 0, Math.PI, rearR, rearBarrel, ship.light, ship.dark, recoil * 0.5);
 
   ctx.restore();
 }

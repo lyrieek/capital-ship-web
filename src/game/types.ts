@@ -8,40 +8,11 @@ export interface Vector2 {
   y: number;
 }
 
-/**
- * 移动点类型接口
- * 包含位置和速度信息
- */
-export interface MovingPoint {
-  x: number;
-  y: number;
-  // X方向速度
-  vx: number;
-  // Y方向速度
-  vy: number;
-}
-
-/**
- * 粒子效果类型接口
- */
-export interface ParticleItem extends MovingPoint {
-  // 剩余生命时间
-  life: number;
-  // 最大生命时间
-  maxLife: number;
-  // 粒子大小
-  size: number;
-  // 粒子颜色
-  color: string;
-}
-
 export interface GameState {
   // 所有舰船列表
   ships: Ship[];
   // 所有炮弹/鱼雷列表
   projectiles: Projectile[];
-  // 所有粒子效果列表
-  particles: ParticleItem[];
   // 游戏运行时间（秒）
   time: number;
   // 游戏是否结束
@@ -105,12 +76,6 @@ export interface GameState {
    * @param dt: 时间增量（秒）
    */
   updateProjectiles(dt: number): void;
-
-  /**
-   * 更新所有粒子效果状态
-   * @param dt: 时间增量（秒）
-   */
-  updateParticles(dt: number): void;
 
   /**
    * 更新游戏主循环

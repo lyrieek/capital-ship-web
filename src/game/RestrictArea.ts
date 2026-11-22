@@ -8,7 +8,7 @@
 // 注意「船心」和「船身」是两件事：
 // 碰撞半径只保证船心不在岛上，船是 100 长的，船头照样会插进沙滩（穿模）。
 // 所以 pickFreeSpot() 传的是 SPAWN_CLEARANCE（半舰长 + 余量），保证整条船都在水面上。
-import { Color3, MeshBuilder, StandardMaterial, type Mesh, type Scene } from "@babylonjs/core";
+import { Color3, MeshBuilder, type LinesMesh, type Scene } from "@babylonjs/core";
 import { P, W, clamp } from "./utils";
 import { worldToScene } from "../babylon";
 import { createShip } from "../ship/create-ship";
@@ -17,8 +17,6 @@ import type { Ship, ShipConfig } from "../ship/ship";
 
 // 渲染分组：与 HUD 同组
 const RG_HUD = 2;
-// 限制区虚线框的 Z 层：贴在海面之上
-const RESTRICT_Z = -0.5;
 // 自动摆船时最多尝试多少次随机点；超出还没找到空位就报错
 const SPAWN_TRIES = 24;
 // 摆船时额外留出的净空：约等于半舰长（100 / 2）加一点余量。
@@ -80,7 +78,7 @@ export class RestrictArea {
   // 是否启用限制；设为 false 后可完全取消限制（战斗运行中可调用 cancel()）
   enabled: boolean;
   // 限制区虚线框网格
-  line: Mesh | null;
+  line: LinesMesh | null;
   // 不可放船的判定：返回 true 表示以 (x, y) 为圆心、radius 为半径的圆压到了陆地。
   // 默认查全局地物表（岛屿 / 礁石 / 建筑），playground 可以传入自己的判定。
   isBlocked: (x: number, y: number, radius: number) => boolean;
@@ -102,16 +100,17 @@ export class RestrictArea {
   }
 
   // 画限制区虚线框：四条虚线围成矩形，颜色跟随阵营并带透明度
-  draw(scene: Scene): Mesh | null {
+  draw(scene: Scene): LinesMesh | null {
     if (!this.enabled) return null;
     if (this.line) return this.line;
 
+    // 同组内的高度统一为 0：压在海面之上靠渲染分组，不靠世界 Z 偏移
     const points = [
-      worldToScene(this.minX, this.minY, RESTRICT_Z),
-      worldToScene(this.maxX, this.minY, RESTRICT_Z),
-      worldToScene(this.maxX, this.maxY, RESTRICT_Z),
-      worldToScene(this.minX, this.maxY, RESTRICT_Z),
-      worldToScene(this.minX, this.minY, RESTRICT_Z),
+      worldToScene(this.minX, this.minY),
+      worldToScene(this.maxX, this.minY),
+      worldToScene(this.maxX, this.maxY),
+      worldToScene(this.minX, this.maxY),
+      worldToScene(this.minX, this.minY),
     ];
 
     // 虚线密度跟随限制区周长，避免大地图上出现超长虚线段
@@ -120,13 +119,9 @@ export class RestrictArea {
     this.line = MeshBuilder.CreateDashedLines(`restrictArea_${this.team}`, { points, dashNb, gapSize: 3, dashSize: 4 }, scene);
     this.line.renderingGroupId = RG_HUD;
     this.line.isPickable = false;
-
-    const material = new StandardMaterial(`restrictAreaMaterial_${this.team}`, scene);
-    const color = Color3.FromHexString(TEAM_COLORS[this.team]);
-    material.diffuseColor = color;
-    material.emissiveColor = color;
-    material.alpha = 0.35;
-    this.line.material = material;
+    // LinesMesh 自带 color / alpha，直接设置即可，不必再挂一份 StandardMaterial
+    this.line.color = Color3.FromHexString(TEAM_COLORS[this.team]);
+    this.line.alpha = 0.35;
 
     return this.line;
   }

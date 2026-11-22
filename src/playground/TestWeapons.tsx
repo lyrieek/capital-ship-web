@@ -532,11 +532,7 @@ export default function TestWeapons() {
     canvas.addEventListener("mousemove", handleMove);
     canvas.addEventListener("mouseleave", handleLeave);
 
-    const observer = new ResizeObserver(() => babylon.engine.resize());
-    observer.observe(canvas);
-
     return () => {
-      observer.disconnect();
       canvas.removeEventListener("click", handleClick);
       canvas.removeEventListener("mousemove", handleMove);
       canvas.removeEventListener("mouseleave", handleLeave);

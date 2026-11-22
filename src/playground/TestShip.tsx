@@ -8,11 +8,11 @@ import { H, P, W, approachAngle } from "../game/utils";
 import { VIEW_H, VIEW_W } from "../game/world";
 import { screenToWorld, setCameraFocus } from "../game/camera-focus";
 import { issueSelectionSail, updateSailOrder } from "../game/movement";
-import { bindAttackKey, bindOceanSelection, bindShipSelection, ShipSelection } from "../game/selection";
+import { bindAttackKey, bindPointerInput, ShipSelection } from "../game/selection";
 import { createBabylonScene, worldToScene } from "../babylon";
 import { createShipHudLayer } from "../ship/hud";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
-import { createShipVisual, disposeNavLine, type ShipVisual, SHIP_Z, RING_Z, updateShipNavigationLine } from "../ship/render-visual";
+import { createShipVisual, disposeNavLine, type ShipVisual, updateShipNavigationLine } from "../ship/render-visual";
 import Model from "../components/Model";
 import "./playground.css";
 import "./TestShip.css";
@@ -42,12 +42,13 @@ function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean, scene
     disposeNavLine(visual);
   }
 
-  visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y, SHIP_Z));
+  visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
   visual.mesh.rotation.z = -ship.angle;
-  visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y, RING_Z));
+  visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
 
   const flash = 1 + ship.hitFlash * 0.9;
   visual.material.emissiveColor.set(flash, flash, flash);
+  visual.turretMaterial.emissiveColor.set(flash, flash, flash);
 
   visual.hud.sync(ship);
 }
@@ -102,7 +103,7 @@ function demoAttack(ships: readonly Ship[], selection: ShipSelection, mouse: { x
   }
 }
 
-// 场景、ActionManager 与渲染循环：负责创建 Babylon 场景、海面、舰船可视对象，
+// 场景、指针输入与渲染循环：负责创建 Babylon 场景、海面、舰船可视对象，
 // 并驱动每帧的状态同步与渲染；返回当前帧率供外部显示。
 function useShipScene(
   canvasRef: RefObject<HTMLCanvasElement | null>,
@@ -172,9 +173,8 @@ function useShipScene(
       // 创建舰船本体 + 头顶 HUD + 选中圈
       const visual = createShipVisual(ship, scene, hudLayer, shipSize);
       visualsRef.current.set(ship, visual);
-      bindShipSelection(scene, visual.mesh, ship, selection, { onMove: moveSelected });
     }
-    bindOceanSelection(scene, oceanSurface.mesh, selection, { onMove: moveSelected });
+    bindPointerInput(scene, selection, { onMove: moveSelected });
     // F 键：选中的舰船向鼠标位置开火
     bindAttackKey(scene, () => demoAttack(shipsRef.current, selection, mouseRef.current));
 
@@ -182,7 +182,7 @@ function useShipScene(
     const toWorld = (event: MouseEvent): { x: number; y: number } | null => {
       const rect = canvas.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return null;
-      return screenToWorld(event.clientX, event.clientY, rect);
+      return screenToWorld(scene, event.clientX, event.clientY, rect);
     };
 
     // 鼠标移动时更新鼠标世界坐标

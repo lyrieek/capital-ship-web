@@ -49,30 +49,30 @@ export default function BattleCanvas() {
 
     initializeGame();
     const engine = initRender(canvas);
-    // Correct the canvas resolution from CSS layout (avoid an initial 0x0 canvas).
-    engine.resize();
     sceneRef.current = engine.scenes[0] ?? null;
     setSceneVersion((v) => v + 1);
 
     // F key: make the selected ships fire at the mouse world position.
     const selection = getShipSelection();
-    if (sceneRef.current && selection) {
-      bindAttackKey(sceneRef.current, () => {
+    const scene = sceneRef.current;
+    if (scene && selection) {
+      bindAttackKey(scene, () => {
         const game = getGameInstance();
         const pointer = pointerRef.current;
         const rect = canvas.getBoundingClientRect();
         if (!game || !pointer || rect.width <= 0 || rect.height <= 0) return;
-        const aim = screenToWorld(pointer.clientX, pointer.clientY, rect);
+        const aim = screenToWorld(scene, pointer.clientX, pointer.clientY, rect);
         mouseRef.current = aim;
         game.focusFireAt(selection.list, aim.x, aim.y);
       });
     }
 
     const handleMove = (event: MouseEvent) => {
+      const currentScene = sceneRef.current;
       const rect = canvas.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
+      if (!currentScene || rect.width <= 0 || rect.height <= 0) return;
       pointerRef.current = { clientX: event.clientX, clientY: event.clientY };
-      mouseRef.current = screenToWorld(event.clientX, event.clientY, rect);
+      mouseRef.current = screenToWorld(currentScene, event.clientX, event.clientY, rect);
     };
     canvas.addEventListener("mousemove", handleMove);
 
@@ -133,11 +133,7 @@ export default function BattleCanvas() {
       }
     });
 
-    const handleResize = () => engine.resize();
-    globalThis.addEventListener("resize", handleResize);
-
     return () => {
-      globalThis.removeEventListener("resize", handleResize);
       globalThis.removeEventListener("keydown", handleKeyDown);
       globalThis.removeEventListener("keyup", handleKeyUp);
       globalThis.removeEventListener("blur", handleBlur);

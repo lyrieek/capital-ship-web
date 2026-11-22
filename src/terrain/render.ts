@@ -1,6 +1,6 @@
 // 地物渲染：把 TerrainItem 列表同步成 Babylon 网格。
 // 地物是静态的，正常只在初始化时 sync 一次；保留 sync 是为了以后支持「战斗中被击毁 / 动态生成」。
-import { Color3, HemisphericLight, type Mesh, type Scene, type StandardMaterial, Vector3 } from "@babylonjs/core";
+import type { Mesh, Scene, StandardMaterial } from "@babylonjs/core";
 import { worldToScene } from "../babylon";
 import { createIslandMaterial, createIslandMesh } from "./island";
 import { createReefMaterial, createReefMesh } from "./reef";
@@ -50,30 +50,18 @@ export function createTerrainRender(options: TerrainRenderOptions): TerrainRende
   const renderingGroupId = options.renderingGroupId ?? TERRAIN_RENDERING_GROUP;
   const z = options.z ?? TERRAIN_Z;
 
-  // Babylon 内置碰撞：地物作为「静态障碍物」参与碰撞。
-  // 移动方（舰船）的椭球在 ship/render-visual.ts 里定义，由 game/render.ts 调用 moveWithCollisions。
-  scene.collisionsEnabled = true;
-
+  // 碰撞不在这里：地物只负责画，舰船 vs 地形的判定在 game/collision.ts。
   // 每个地物一个 Mesh：key 为 item.id，sync 时按 id 增删
   const meshes = new Map<string, Mesh>();
   // 材质按类型缓存：同类型地物共用一份，几何形状差异靠 seed 体现在网格上
   const materials = new Map<TerrainKind, StandardMaterial>();
 
-  // 地物要有真实光照才有体积感。场景里其他材质都是自发光贴图（舰船 / 弹药 / 粒子）
-  // 或 ShaderMaterial（海面），不受这盏灯影响，所以可以放心在这里加。
-  // HemisphericLight 的 direction 指向光源：我们的网格法线朝 -Z（相机一侧），
-  // 所以光源也放在 -Z 一侧，岛顶才是亮的。
-  // TODO: 以后接入统一的太阳 / 环境光系统时，把这盏灯挪到 babylon/scene.ts 管理
-  const light = new HemisphericLight("terrainLight", new Vector3(-0.35, 0.45, -1).normalize(), scene);
-  light.intensity = 0.95;
-  light.diffuse = Color3.White();
-  light.groundColor = Color3.FromHexString("#24404f");
-  light.specular = Color3.Black();
-
   function getMaterial(kind: TerrainKind): StandardMaterial {
     const existing = materials.get(kind);
     if (existing) return existing;
     const material = FACTORIES[kind].createMaterial(`terrainMaterial_${kind}`, scene);
+    // 地物材质是静态的：冻结后跳过每帧的 effect/define 检查
+    material.freeze();
     materials.set(kind, material);
     return material;
   }
@@ -83,9 +71,6 @@ export function createTerrainRender(options: TerrainRenderOptions): TerrainRende
     const mesh = FACTORIES[item.kind].createMesh(`terrain_${item.id}`, scene, spec, item);
     mesh.material = getMaterial(item.kind);
     mesh.renderingGroupId = renderingGroupId;
-    // 只有 spec.solid 的地物才当障碍物：
-    // 船厂 solid = false——它有一半在水里（船坞），必须让船能开进去，否则进厂检测永远不成立。
-    mesh.checkCollisions = spec.solid;
     // TODO: 地物是否参与拾取（点击查看名称 / 耐久）？需要时改 true，并把 id / kind 挂到 metadata
     mesh.isPickable = false;
     return mesh;
@@ -130,7 +115,6 @@ export function createTerrainRender(options: TerrainRenderOptions): TerrainRende
     meshes.clear();
     for (const material of materials.values()) material.dispose();
     materials.clear();
-    light.dispose();
   }
 
   return { sync, dispose };

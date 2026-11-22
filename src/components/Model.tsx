@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef } from "react";
 import type { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Button, Rectangle, StackPanel, TextBlock } from "@babylonjs/gui";
-import { sendGuiLayerToFront } from "../babylon/gui";
+import { registerGuiLayer, unregisterGuiLayer } from "../babylon/gui";
+import { popUiBlocker, pushUiBlocker } from "../game/ui-state";
 
 export interface ModelAction {
   label: string;
@@ -79,10 +80,17 @@ export default function Model({
     latestRef.current = { open, actions: actions ?? [], onBackdropClick };
   });
 
+  // 模态打开时暂停场景级指针输入，避免点遮罩也选了船
+  useEffect(() => {
+    if (!open) return;
+    pushUiBlocker();
+    return () => popUiBlocker();
+  }, [open]);
+
   useEffect(() => {
     if (!scene) return;
     const root = AdvancedDynamicTexture.CreateFullscreenUI(`model${id}`, true, scene);
-    sendGuiLayerToFront(root);
+    registerGuiLayer(root, "modal");
 
     const backdrop = new Rectangle("modelBackdrop");
     backdrop.width = "100%";
@@ -142,6 +150,7 @@ export default function Model({
     footerRef.current = footer;
 
     return () => {
+      unregisterGuiLayer(root);
       root.dispose();
       backdropRef.current = null;
       panelRef.current = null;
