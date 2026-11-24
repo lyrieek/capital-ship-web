@@ -4,6 +4,10 @@
   "legend": "地形图例",
   "entities": "舰艇 & 建筑",
   "language": "语言",
+  "viewport": {
+    "tooSmallTitle": "窗口太小",
+    "tooSmallBody": "游戏至少需要 {{width}} × {{height}} 的显示区域，当前可用 {{availableWidth}} × {{availableHeight}}。请拉宽窗口或调高分辨率。"
+  },
   "minimap": {
     "title": "战术地图"
   },

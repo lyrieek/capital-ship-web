@@ -1,4 +1,4 @@
-// 相机视口控制：大地图只显示一块 1600 x 900 的窗口，相机焦点跟随战场，
+// 相机视口控制：大地图只显示一块运行时视口（最小 1600 x 900），相机焦点跟随战场，
 // 也支持从 minimap / 调试页直接跳转到世界坐标。
 import { Matrix, Plane, Vector3, type FreeCamera, type Scene } from "@babylonjs/core";
 import type { Ship } from "../ship/ship";

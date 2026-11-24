@@ -6,7 +6,7 @@ import { createShip, type Ship } from "../ship/index";
 import { RestrictAreaImpl } from "../game/RestrictAreaImpl";
 import { defaultMap } from "../map";
 import { H, P, W, approachAngle } from "../game/utils";
-import { VIEW_H, VIEW_W } from "../game/world";
+import { MIN_VIEW_H, MIN_VIEW_W } from "../game/world";
 import { screenToWorld, setCameraFocus } from "../game/camera-focus";
 import { issueSelectionSail, updateSailOrder } from "../game/movement";
 import { bindAttackKey, bindPointerInput, ShipSelection } from "../game/selection";
@@ -129,22 +129,22 @@ function useShipScene(
     const babylon = createBabylonScene({
       canvas,
       clearColor: [0.04, 0.17, 0.27, 1],
-      width: VIEW_W,
-      height: VIEW_H,
+      width: MIN_VIEW_W,
+      height: MIN_VIEW_H,
     });
     const scene = babylon.scene;
     sceneRef.current = scene;
     // 调试页相机固定对准地图中心
     setCameraFocus(W / 2, H / 2);
-    const hudLayer = createShipHudLayer(scene, VIEW_W);
+    const hudLayer = createShipHudLayer(scene, MIN_VIEW_W);
 
     // 海面只铺满可见视口，坐标仍按整张大地图换算
     const oceanSurface = createOceanSurface({
       scene,
       kind: "shallow",
-      worldWidth: VIEW_W,
-      worldHeight: VIEW_H,
-      viewHeight: VIEW_H,
+      worldWidth: MIN_VIEW_W,
+      worldHeight: MIN_VIEW_H,
+      viewHeight: MIN_VIEW_H,
       segmentsX: 200,
       segmentsY: 112,
       renderingGroupId: RG_OCEAN,
@@ -283,7 +283,7 @@ export default function TestShip() {
           </p>
         </section>
         <section className="playground-preview">
-          <canvas ref={canvasRef} className="playground-canvas" width={VIEW_W} height={VIEW_H} />
+          <canvas ref={canvasRef} className="playground-canvas" width={MIN_VIEW_W} height={MIN_VIEW_H} />
         </section>
       </div>
       <Model

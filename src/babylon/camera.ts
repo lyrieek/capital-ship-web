@@ -1,4 +1,5 @@
 import { Camera, FreeCamera, Vector3, type Scene } from "@babylonjs/core";
+import { MIN_VIEW_H, MIN_VIEW_W } from "../game/world";
 
 export interface OrthoCameraOptions {
   width: number;
@@ -12,11 +13,18 @@ export const MIN_ZOOM = 0.5;
 export const MAX_ZOOM = 3;
 
 let zoom = 1;
-let baseWidth = 1600;
-let baseHeight = 900;
+let baseWidth = MIN_VIEW_W;
+let baseHeight = MIN_VIEW_H;
 
 export function getZoom(): number {
   return zoom;
+}
+
+/** 更新正交相机的基准视口（CSS 像素，未除 zoom）；窗口尺寸变化后调用。 */
+export function setCameraBaseSize(width: number, height: number): void {
+  if (width <= 0 || height <= 0) return;
+  baseWidth = width;
+  baseHeight = height;
 }
 
 export function getViewWidth(): number {

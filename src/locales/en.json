@@ -4,6 +4,10 @@
   "legend": "Terrain Legend",
   "entities": "Ships & Buildings",
   "language": "Language",
+  "viewport": {
+    "tooSmallTitle": "Window Too Small",
+    "tooSmallBody": "This game needs at least {{width}} × {{height}} of display area; only {{availableWidth}} × {{availableHeight}} is available. Widen the window or increase the resolution."
+  },
   "minimap": {
     "title": "Tactical Map"
   },

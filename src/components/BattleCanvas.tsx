@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Scene, FreeCamera } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { getGameInstance, initializeGame, getRestrictAreas, getGameSpeedMultiplier } from "../game/Game";
-import { disposeRender, getShipSelection, initRender, renderGame, getRestrictError } from "../game/render";
+import { disposeRender, getShipSelection, initRender, resizeRender, renderGame, getRestrictError } from "../game/render";
 import { panCameraBy, screenToWorld, getCameraFocus, setCameraFocus } from "../game/camera-focus";
 import { getZoom, zoomBy, applyZoomToCamera } from "../babylon";
 import { bindAttackKey } from "../game/selection";
 import { W, H } from "../game/utils";
+import { MIN_VIEW_H, MIN_VIEW_W } from "../game/world";
+import { fitViewport, type ViewportSize } from "../game/viewport";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
 import { getMaps, type GameMap } from "../map";
 import Hud from "./Hud";
@@ -49,17 +51,53 @@ function BattleStage({ map, onChangeMap }: BattleStageProps) {
   const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
   // Held WASD / arrow keys, applied every frame by the render loop.
   const panKeysRef = useRef(new Set<string>());
+  // 可用空间与运行时视口：固定 16:9，最小 MIN_VIEW_W x MIN_VIEW_H。
+  const fillRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<ViewportSize | null>(null);
+  const [viewport, setViewport] = useState<ViewportSize | null>(null);
+  const [tooSmall, setTooSmall] = useState(false);
+  const [available, setAvailable] = useState({ width: 0, height: 0 });
+  // 渲染循环每帧读取：窗口小于最低要求时冻结推进与绘制。
+  const blockedRef = useRef(false);
 
   // Block the context menu so right-click fleet orders work.
   usePreventContextMenu(canvasRef);
 
+  // 视口跟随浏览器可用空间：等比放到最大，放不下最低要求时冻结并提示。
   useEffect(() => {
+    const fill = fillRef.current;
+    if (!fill) return;
+
+    const update = () => {
+      const width = fill.clientWidth;
+      const height = fill.clientHeight;
+      const fitted = fitViewport(width, height);
+      blockedRef.current = fitted === null;
+      setTooSmall(fitted === null);
+      setAvailable((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+      if (!fitted) return;
+      viewportRef.current = fitted;
+      setViewport((prev) => (prev && prev.width === fitted.width && prev.height === fitted.height ? prev : fitted));
+    };
+
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(fill);
+    return () => observer.disconnect();
+  }, []);
+
+  const ready = viewport !== null;
+
+  // 只在首次拿到合法视口时创建场景；之后窗口变化只做 resize，不重建对局。
+  useEffect(() => {
+    if (!ready) return;
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const size = viewportRef.current;
+    if (!canvas || !size) return;
 
     // 地图决定地形摆位与限制区；initializeGame 必须在 initRender 之前完成。
     initializeGame(map);
-    const engine = initRender(canvas, getRestrictAreas());
+    const engine = initRender(canvas, getRestrictAreas(), size);
     sceneRef.current = engine.scenes[0] ?? null;
     setSceneVersion((v) => v + 1);
 
@@ -131,6 +169,8 @@ function BattleStage({ map, onChangeMap }: BattleStageProps) {
       const now = performance.now();
       const rawDt = Math.min((now - last) / 1000, 0.05);
       last = now;
+      // 窗口小于最低要求：暂停推进与绘制，等待用户调整到可渲染尺寸。
+      if (blockedRef.current) return;
       const dt = rawDt * getGameSpeedMultiplier();
 
       const game = getGameInstance();
@@ -177,7 +217,13 @@ function BattleStage({ map, onChangeMap }: BattleStageProps) {
       sceneRef.current = null;
       setSceneVersion(0);
     };
-  }, [map]);
+  }, [map, ready]);
+
+  // 可用空间变化后同步相机 / HUD / 海面与 backbuffer。
+  useLayoutEffect(() => {
+    if (!viewport) return;
+    resizeRender(viewport.width, viewport.height);
+  }, [viewport]);
 
   // 游戏结束后回到选图界面；选择新地图会重新挂载整个战场。
   const handleRestart = useCallback(() => {
@@ -188,36 +234,55 @@ function BattleStage({ map, onChangeMap }: BattleStageProps) {
   const winnerText = winnerTeam === "red" ? t("hud.winnerRed") : winnerTeam === "blue" ? t("hud.winnerBlue") : t("hud.winnerDraw");
   const results = gameOver ? (getGameInstance()?.record.getResults() ?? []) : [];
   const subtitle = t("battleRecord.mapInfo", { name: t(map.nameKey) });
+  const stageHidden = tooSmall || viewport === null;
 
   return (
-    <div className="battle-stage">
-      <canvas ref={canvasRef} id="c" className="battle-canvas" />
-      {scene ? <Hud key={sceneVersion} scene={scene} allow2x={true} /> : null}
-      <Minimap />
-      <BattleResult
-        scene={scene}
-        open={gameOver}
-        title={winnerText}
-        titleColor={winnerTeam === "red" ? "#ff7b6b" : winnerTeam === "blue" ? "#7cc4ff" : "#cfe3f5"}
-        subtitle={subtitle}
-        results={results}
-        onRestart={handleRestart}
-      />
-      <Model
-        scene={scene}
-        open={showRestrictError}
-        title={t("ship.restrictErrorTitle")}
-        message={restrictError ?? ""}
-        actions={[
-          {
-            label: t("ship.restrictErrorButton"),
-            onClick: () => {
-              setShowRestrictError(false);
-              setRestrictError(null);
+    <div className="battle-fill" ref={fillRef}>
+      <div
+        className={stageHidden ? "battle-stage is-blocked" : "battle-stage"}
+        style={viewport ? { width: viewport.width, height: viewport.height } : undefined}
+      >
+        <canvas ref={canvasRef} id="c" className="battle-canvas" />
+        {scene ? <Hud key={sceneVersion} scene={scene} allow2x={true} /> : null}
+        <Minimap />
+        <BattleResult
+          scene={scene}
+          open={gameOver}
+          title={winnerText}
+          titleColor={winnerTeam === "red" ? "#ff7b6b" : winnerTeam === "blue" ? "#7cc4ff" : "#cfe3f5"}
+          subtitle={subtitle}
+          results={results}
+          onRestart={handleRestart}
+        />
+        <Model
+          scene={scene}
+          open={showRestrictError}
+          title={t("ship.restrictErrorTitle")}
+          message={restrictError ?? ""}
+          actions={[
+            {
+              label: t("ship.restrictErrorButton"),
+              onClick: () => {
+                setShowRestrictError(false);
+                setRestrictError(null);
+              },
             },
-          },
-        ]}
-      />
+          ]}
+        />
+      </div>
+      {tooSmall ? (
+        <div className="viewport-too-small" role="alert">
+          <h2>{t("viewport.tooSmallTitle")}</h2>
+          <p>
+            {t("viewport.tooSmallBody", {
+              width: MIN_VIEW_W,
+              height: MIN_VIEW_H,
+              availableWidth: available.width,
+              availableHeight: available.height,
+            })}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

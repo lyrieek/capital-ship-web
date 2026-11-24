@@ -8,12 +8,12 @@ import { createTerrainRender, getTerrainField, type TerrainRender } from "../ter
 import type { GameState } from "./types";
 import type { Ship } from "../ship/ship";
 import { H, W } from "./utils";
-import { VIEW_H, VIEW_W } from "./world";
-import { getCameraFocus, resetCameraFocus, updateCameraFocus } from "./camera-focus";
+import type { ViewportSize } from "./viewport";
+import { getCameraFocus, resetCameraFocus, setCameraFocus, updateCameraFocus } from "./camera-focus";
 import { bindPointerInput, ShipSelection } from "./selection";
 import { issueSelectionSail } from "./movement";
 import type { RestrictAreaImpl } from "./RestrictAreaImpl";
-import { createBabylonScene, updateCameraEffect, worldToScene } from "../babylon";
+import { applyZoomToCamera, createBabylonScene, getViewHeight, setCameraBaseSize, updateCameraEffect, worldToScene } from "../babylon";
 import { createParticleFx, type ParticleFx } from "./particle-fx";
 import { createShipHudLayer, type ShipHudLayer } from "../ship/hud";
 import {
@@ -83,7 +83,7 @@ function createWater() {
     kind: getOceanKind(),
     worldWidth: W,
     worldHeight: H,
-    viewHeight: VIEW_H,
+    viewHeight: getViewHeight(),
     // 细分数按可见像素密度设定（约 5px/格），不随地图面积线性暴涨
     segmentsX: 320,
     segmentsY: 180,
@@ -195,13 +195,13 @@ export function disposeRender() {
   scene = null;
 }
 
-export function initRender(canvas: HTMLCanvasElement, areas: readonly RestrictAreaImpl[]): Engine {
+export function initRender(canvas: HTMLCanvasElement, areas: readonly RestrictAreaImpl[], viewport: ViewportSize): Engine {
   disposeRender();
   const babylon = createBabylonScene({
     canvas,
     clearColor: [0.04, 0.17, 0.27, 1],
-    width: VIEW_W,
-    height: VIEW_H,
+    width: viewport.width,
+    height: viewport.height,
   });
   engine = babylon.engine;
   scene = babylon.scene;
@@ -209,13 +209,13 @@ export function initRender(canvas: HTMLCanvasElement, areas: readonly RestrictAr
   const selection = new ShipSelection();
   shipSelection = selection;
 
-  // 相机视口仍是 1600 x 900，初始对准地图中心
+  // 相机视口按当前可用空间等比计算，初始对准地图中心
   resetCameraFocus();
 
   // 场景级指针状态机：选择 / 右键移动 / hover；只绑定一次，不随舰船数量增长
   unbindPointer = bindPointerInput(scene, selection, { onMove: moveSelection });
 
-  shipHudLayer = createShipHudLayer(scene, VIEW_W);
+  shipHudLayer = createShipHudLayer(scene, viewport.width);
   createWater();
   createTerrain();
 
@@ -232,6 +232,22 @@ export function initRender(canvas: HTMLCanvasElement, areas: readonly RestrictAr
   });
   particleFx = createParticleFx(scene, RG_FX);
   return engine;
+}
+
+/** 可用空间变化后同步相机、HUD、海面与 backbuffer；未初始化时只更新基准尺寸。 */
+export function resizeRender(width: number, height: number): void {
+  setCameraBaseSize(width, height);
+
+  // 视口变化后把焦点重新夹回地图范围（地图视角边缘不会露出海面外）
+  const focus = getCameraFocus();
+  setCameraFocus(focus.x, focus.y);
+
+  const camera = scene?.activeCamera as FreeCamera | null;
+  if (camera) applyZoomToCamera(camera);
+
+  shipHudLayer?.setViewportWidth(width);
+  oceanSurface?.setViewHeight(getViewHeight());
+  engine?.resize();
 }
 
 export function renderGame(game: GameState, dt = 1 / 60) {

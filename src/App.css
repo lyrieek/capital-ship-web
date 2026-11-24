@@ -2,7 +2,9 @@
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .app-header {
@@ -21,8 +23,9 @@
 .app-main {
   display: flex;
   flex: 1;
-  padding: 1rem;
+  min-height: 0;
   gap: 1rem;
+  overflow: auto;
 }
 
 .app-nav {
@@ -43,17 +46,21 @@
 }
 
 .map-section {
-  flex: 2;
+  position: relative;
+  flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  overflow: auto;
 }
 
 /* 选图界面：战斗开始前显示，结束后通过「重新开始」返回 */
 .map-select {
-  width: 100%;
+  width: calc(100% - 2rem);
   max-width: 1600px;
+  margin: 1rem 0;
   padding: clamp(18px, 3vw, 36px);
   border: 1px solid rgba(125, 180, 220, 0.28);
   border-radius: 12px;
@@ -176,19 +183,57 @@
   outline-offset: 2px;
 }
 
+/* 战场填充层：占满可用空间，把 16:9 舞台居中，多余空间自然留黑边 */
+.battle-fill {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #04121d;
+}
+
 /* 战场舞台：承载画布与右下角小地图，小地图定位相对它 */
 .battle-stage {
   position: relative;
-  width: 100%;
-  max-width: 1600px;
+  flex: none;
 }
 
-/* 战场画布：随容器宽度缩放，保持 16:9（与 1600x900 的视口一致） */
+/* 窗口低于最低要求或视口尚未测量时不渲染舞台 */
+.battle-stage.is-blocked {
+  display: none;
+}
+
+/* 战场画布：尺寸由运行时视口直接决定（舞台已固定 16:9） */
 .battle-stage .battle-canvas {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: 100%;
   touch-action: none;
+}
+
+/* 可用空间小于 1600x900 时的提示 */
+.viewport-too-small {
+  max-width: min(560px, 90%);
+  padding: 24px 28px;
+  border: 1px solid rgba(125, 180, 220, 0.35);
+  border-radius: 12px;
+  background: rgba(6, 23, 36, 0.95);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  text-align: center;
+}
+
+.viewport-too-small h2 {
+  margin: 0 0 10px;
+  color: #e6f2fb;
+  font-size: 1.3rem;
+}
+
+.viewport-too-small p {
+  margin: 0;
+  color: rgba(190, 220, 240, 0.82);
+  font-size: 0.92rem;
+  line-height: 1.6;
 }
 
 /* 右下角战术小地图 */

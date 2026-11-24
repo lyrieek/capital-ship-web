@@ -5,7 +5,7 @@
 //
 // 地图尺寸 / 性能平衡区间（基于当前渲染架构：正交相机 + 单张程序化海面 +
 // 屏幕像素成本固定的着色器；GPU 主要成本是视口像素，CPU 成本只跟舰船/弹药数量有关）：
-//   - 线性 2~4 倍（面积 4~16 倍）：安全区间。视口仍是 1600 x 900，海面细分数固定，
+//   - 线性 2~4 倍（面积 4~16 倍）：安全区间。视口基准仍是 1600 x 900，海面细分数固定，
 //     世界变大只增加少量顶点与坐标范围，帧率基本不变。当前采用的 3.2 倍位于此区间。
 //   - 线性 4~8 倍（面积 16~64 倍）：需要视口裁剪（只渲染可见海面分块）、
 //     海面 LOD 和更细的空间划分，否则顶点数与波峰细节会开始拖慢低端设备。
@@ -14,10 +14,20 @@
 export const WORLD_W = 5120;
 export const WORLD_H = 2880;
 
-// 可见视口尺寸：相机正交视口仍是原来的 1600 x 900，1 世界单位 ≈ 1 屏幕像素。
-export const VIEW_W = 1600;
-export const VIEW_H = 900;
+// 旧版地图 / 设计基准尺寸（16:9）。只用于表达“相对原地图的面积倍率”和
+// 作为渲染视口的最低要求，不再代表实际渲染视口。
+export const ORIGINAL_WORLD_W = 1600;
+export const ORIGINAL_WORLD_H = 900;
 
-// 相对原地图的面积倍率，供调试/性能面板展示。
-export const WORLD_AREA_RATIO = (WORLD_W * WORLD_H) / (1600 * 900);
+// 渲染视口的最低要求（CSS 像素）。可用空间放不下时直接拒绝渲染。
+export const MIN_VIEW_W = ORIGINAL_WORLD_W;
+export const MIN_VIEW_H = ORIGINAL_WORLD_H;
+
+// 固定游戏可视比例：可用空间按 16:9 等比放到最大，多出来的部分留黑边，
+// 保证不同宽高比的屏幕看到的战场范围一致。
+export const VIEW_ASPECT_W = 16;
+export const VIEW_ASPECT_H = 9;
+
+// 相对原地图（1600 x 900）的面积倍率，供调试/性能面板展示。
+export const WORLD_AREA_RATIO = (WORLD_W * WORLD_H) / (ORIGINAL_WORLD_W * ORIGINAL_WORLD_H);
 export const WORLD_LINEAR_RATIO = Math.sqrt(WORLD_AREA_RATIO);

@@ -24,6 +24,8 @@ export interface ShipHud {
 
 export interface ShipHudLayer {
   create(ship: Ship, mesh: Mesh, shipSize: number): ShipHud;
+  /** 视口宽度变化后更新设计宽度，保持 HUD 的屏幕像素尺寸稳定 */
+  setViewportWidth(width: number): void;
   dispose(): void;
 }
 
@@ -262,6 +264,9 @@ export function createShipHudLayer(scene: Scene, designWidth: number): ShipHudLa
 
   return {
     create,
+    setViewportWidth: (width: number) => {
+      root.idealWidth = width;
+    },
     dispose: () => {
       i18n.off("languageChanged", refreshAll);
       for (let index = huds.length - 1; index >= 0; index -= 1) huds[index].dispose();

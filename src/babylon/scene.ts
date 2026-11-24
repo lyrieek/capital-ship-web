@@ -1,6 +1,9 @@
 import { Color3, Color4, Engine, HemisphericLight, Scene, Vector3 } from "@babylonjs/core";
 import { createOrthoCamera } from "./camera";
 
+// 高分屏最多按 2x 渲染：海面是逐像素着色器，4K 全屏按 3x 会白白多渲染一倍像素。
+const MAX_RENDER_PIXEL_RATIO = 2;
+
 export interface BabylonSceneOptions {
   canvas: HTMLCanvasElement;
   clearColor?: [number, number, number, number];
@@ -20,6 +23,7 @@ export interface BabylonScene {
 export function createBabylonScene(options: BabylonSceneOptions): BabylonScene {
   const { canvas, clearColor = [0.04, 0.17, 0.27, 1], width = 1600, height = 900, positionZ = -100, preserveDrawingBuffer = false } = options;
   const engine = new Engine(canvas, true, { preserveDrawingBuffer, stencil: true }, true);
+  engine.setHardwareScalingLevel(1 / Math.min(globalThis.devicePixelRatio || 1, MAX_RENDER_PIXEL_RATIO));
   const scene = new Scene(engine);
   scene.clearColor = new Color4(...clearColor);
   // 场景级光照：岛屿 / 礁石 / 船厂这些受光材质共用。
@@ -32,7 +36,10 @@ export function createBabylonScene(options: BabylonSceneOptions): BabylonScene {
   createOrthoCamera(scene, { width, height, positionZ });
   engine.resize();
 
-  const observer = new ResizeObserver(() => engine.resize());
+  const observer = new ResizeObserver(() => {
+    // 画布被隐藏（display: none）时 client 尺寸为 0，跳过避免把 backbuffer 清成 0。
+    if (canvas.clientWidth > 0 && canvas.clientHeight > 0) engine.resize();
+  });
   observer.observe(canvas);
 
   return {
