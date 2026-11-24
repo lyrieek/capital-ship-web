@@ -8,6 +8,43 @@ export interface OrthoCameraOptions {
   maxZ?: number;
 }
 
+export const MIN_ZOOM = 0.5;
+export const MAX_ZOOM = 3;
+
+let zoom = 1;
+let baseWidth = 1600;
+let baseHeight = 900;
+
+export function getZoom(): number {
+  return zoom;
+}
+
+export function getViewWidth(): number {
+  return baseWidth / zoom;
+}
+
+export function getViewHeight(): number {
+  return baseHeight / zoom;
+}
+
+export function setZoom(value: number): number {
+  zoom = value < MIN_ZOOM ? MIN_ZOOM : value > MAX_ZOOM ? MAX_ZOOM : value;
+  return zoom;
+}
+
+export function zoomBy(factor: number): number {
+  return setZoom(zoom * factor);
+}
+
+export function applyZoomToCamera(camera: FreeCamera): void {
+  const w = getViewWidth();
+  const h = getViewHeight();
+  camera.orthoLeft = -w / 2;
+  camera.orthoRight = w / 2;
+  camera.orthoTop = h / 2;
+  camera.orthoBottom = -h / 2;
+}
+
 /** 相机轻微倾斜与摆动效果（可选项，默认关闭） */
 export interface CameraEffect {
   /** 是否开启倾斜摆动 */
@@ -53,10 +90,9 @@ export function createOrthoCamera(scene: Scene, options: OrthoCameraOptions): Fr
   const camera = new FreeCamera("camera", new Vector3(0, 0, options.positionZ ?? -100), scene);
   camera.setTarget(Vector3.Zero());
   camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-  camera.orthoLeft = -options.width / 2;
-  camera.orthoRight = options.width / 2;
-  camera.orthoTop = options.height / 2;
-  camera.orthoBottom = -options.height / 2;
+  baseWidth = options.width;
+  baseHeight = options.height;
+  applyZoomToCamera(camera);
   // 正交俯视只用到相机到场景的一小段深度：收紧 near/far 能显著提高深度精度。
   // 相机在 positionZ（默认 -100），场景对象大概在 z = [-34, 0]，所以 [1, 200] 足够。
   camera.minZ = options.minZ ?? 1;

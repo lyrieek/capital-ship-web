@@ -6,7 +6,8 @@ import { getGameInstance, getRestrictAreas } from "../game/Game";
 import { getShipSelection } from "../game/render";
 import { focusCameraAt, getCameraFocus } from "../game/camera-focus";
 import { getTeamRestrictColor } from "../game/RestrictArea";
-import { VIEW_H, VIEW_W, WORLD_H, WORLD_W } from "../game/world";
+import { WORLD_H, WORLD_W } from "../game/world";
+import { getViewHeight, getViewWidth } from "../babylon";
 import { getTerrainField, getTerrainSpec, islandRadiusAt, shipyardZoneLocal } from "../terrain";
 
 // Internal resolution is 2x the displayed size for crisp lines.
@@ -164,8 +165,8 @@ function drawShips(ctx: CanvasRenderingContext2D): void {
 
 function drawViewport(ctx: CanvasRenderingContext2D): void {
   const focus = getCameraFocus();
-  const halfW = (VIEW_W / 2) * SCALE_X;
-  const halfH = (VIEW_H / 2) * SCALE_Y;
+  const halfW = (getViewWidth() / 2) * SCALE_X;
+  const halfH = (getViewHeight() / 2) * SCALE_Y;
   const x = Math.max(0, focus.x * SCALE_X - halfW);
   const y = Math.max(0, focus.y * SCALE_Y - halfH);
   const right = Math.min(MM_W, focus.x * SCALE_X + halfW);

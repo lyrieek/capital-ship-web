@@ -2,8 +2,9 @@
 // 也支持从 minimap / 调试页直接跳转到世界坐标。
 import { Matrix, Plane, Vector3, type FreeCamera, type Scene } from "@babylonjs/core";
 import type { Ship } from "../ship/ship";
+import { applyZoomToCamera, getViewHeight, getViewWidth } from "../babylon";
 import { clamp } from "./utils";
-import { VIEW_H, VIEW_W, WORLD_H, WORLD_W } from "./world";
+import { WORLD_H, WORLD_W } from "./world";
 
 export interface CameraFocus {
   x: number;
@@ -29,8 +30,8 @@ function clampFocusAxis(value: number, viewSize: number, worldSize: number): num
 // 把焦点限制在视口完全位于地图内的范围；地图小于视口时固定居中。
 function clampFocus(x: number, y: number): CameraFocus {
   return {
-    x: clampFocusAxis(x, VIEW_W, WORLD_W),
-    y: clampFocusAxis(y, VIEW_H, WORLD_H),
+    x: clampFocusAxis(x, getViewWidth(), WORLD_W),
+    y: clampFocusAxis(y, getViewHeight(), WORLD_H),
   };
 }
 
@@ -93,8 +94,8 @@ export function screenToWorld(scene: Scene, clientX: number, clientY: number, re
   const u = rect.width > 0 ? localX / rect.width : 0.5;
   const v = rect.height > 0 ? localY / rect.height : 0.5;
   return {
-    x: clamp(focus.x + (u - 0.5) * VIEW_W, 0, WORLD_W),
-    y: clamp(focus.y + (v - 0.5) * VIEW_H, 0, WORLD_H),
+    x: clamp(focus.x + (u - 0.5) * getViewWidth(), 0, WORLD_W),
+    y: clamp(focus.y + (v - 0.5) * getViewHeight(), 0, WORLD_H),
   };
 }
 
@@ -137,6 +138,7 @@ function applyCamera(scene: Scene): void {
   camera.position.x = sceneX;
   camera.position.y = sceneY;
   camera.setTarget(new Vector3(sceneX, sceneY, 0));
+  applyZoomToCamera(camera);
 }
 
 // 每帧调用：手动保持期结束后平滑跟随战场，然后把焦点写入相机。

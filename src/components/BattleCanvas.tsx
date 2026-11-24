@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Scene } from "@babylonjs/core";
+import type { Scene, FreeCamera } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { getGameInstance, initializeGame, resetGame, getGameSpeedMultiplier } from "../game/Game";
 import { disposeRender, getShipSelection, initRender, renderGame, getRestrictError } from "../game/render";
-import { panCameraBy, screenToWorld } from "../game/camera-focus";
+import { panCameraBy, screenToWorld, getCameraFocus, setCameraFocus } from "../game/camera-focus";
+import { getZoom, zoomBy, applyZoomToCamera } from "../babylon";
 import { bindAttackKey } from "../game/selection";
 import { W, H } from "../game/utils";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
@@ -76,6 +77,27 @@ export default function BattleCanvas() {
     };
     canvas.addEventListener("mousemove", handleMove);
 
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const currentScene = sceneRef.current;
+      const rect = canvas.getBoundingClientRect();
+      if (!currentScene || rect.width <= 0 || rect.height <= 0) return;
+
+      const before = screenToWorld(currentScene, event.clientX, event.clientY, rect);
+      const factor = Math.exp(-event.deltaY * 0.0012);
+      const oldZoom = getZoom();
+      zoomBy(factor);
+      if (getZoom() === oldZoom) return;
+
+      const camera = currentScene.activeCamera as FreeCamera | null;
+      if (camera) applyZoomToCamera(camera);
+
+      const after = screenToWorld(currentScene, event.clientX, event.clientY, rect);
+      const focus = getCameraFocus();
+      setCameraFocus(focus.x + before.x - after.x, focus.y + before.y - after.y, 2);
+    };
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+
     // WASD / arrow keys: hold to pan the camera viewport.
     const panKeys = panKeysRef.current;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -139,6 +161,7 @@ export default function BattleCanvas() {
       globalThis.removeEventListener("blur", handleBlur);
       panKeys.clear();
       canvas.removeEventListener("mousemove", handleMove);
+      canvas.removeEventListener("wheel", handleWheel);
       engine.stopRenderLoop();
       disposeRender();
       sceneRef.current = null;
