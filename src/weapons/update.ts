@@ -1,5 +1,6 @@
 // 弹药更新：沿弹道推进、记录尾迹、判定命中
 import { curveTangent, sampleCurve } from "./trajectory";
+import type { TerrainField } from "../terrain/field";
 import type { Projectile, ProjectileTarget } from "./types";
 
 /** 弹药更新参数 */
@@ -8,12 +9,16 @@ export interface ProjectileUpdateOptions {
   projectiles: Projectile[];
   /** 可命中的目标 */
   targets: ProjectileTarget[];
+  /** 地形场（用于弹药与岛礁碰撞；缺省则不检查地形） */
+  field?: TerrainField | null;
   /** 战场宽度 */
   worldWidth: number;
   /** 战场高度 */
   worldHeight: number;
   /** 命中回调 */
   onHit?: (projectile: Projectile, target: ProjectileTarget, x: number, y: number) => void;
+  /** 撞上地形回调 */
+  onTerrainHit?: (projectile: Projectile, x: number, y: number) => void;
   /** 落水回调：弹药耗尽射程或飞出战场（没有命中目标） */
   onLanded?: (projectile: Projectile, x: number, y: number) => void;
 }
@@ -56,10 +61,22 @@ function findHit(projectile: Projectile, targets: ProjectileTarget[]): Projectil
  * @param dt 时间增量（秒）
  */
 export function updateProjectiles(dt: number, options: ProjectileUpdateOptions): void {
-  const { projectiles, targets, worldWidth, worldHeight } = options;
+  const { projectiles, targets, worldWidth, worldHeight, field } = options;
   const alive: Projectile[] = [];
 
   for (const projectile of projectiles) {
+    // 尚未到激活时间：递减 delay，不推进位置，不减少寿命
+    const delay = projectile.delay;
+    if (delay !== undefined && delay !== null && delay > 0) {
+      const next = delay - dt;
+      if (next > 0) {
+        projectile.delay = next;
+        alive.push(projectile);
+        continue;
+      }
+      projectile.delay = 0;
+    }
+
     advance(projectile, dt);
 
     projectile.trail.push(projectile.x, projectile.y);
@@ -70,6 +87,13 @@ export function updateProjectiles(dt: number, options: ProjectileUpdateOptions):
     if (projectile.life <= 0 || splashed) {
       projectile.dead = true;
       options.onLanded?.(projectile, projectile.x, projectile.y);
+      continue;
+    }
+
+    // 撞上岛礁：地形是固体障碍物，弹药触碰即爆炸消失
+    if (field && field.isBlockedCircle(projectile.x, projectile.y, projectile.r)) {
+      projectile.dead = true;
+      options.onTerrainHit?.(projectile, projectile.x, projectile.y);
       continue;
     }
 

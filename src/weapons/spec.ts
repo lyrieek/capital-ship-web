@@ -27,6 +27,8 @@ export interface WeaponSpec {
   cooldownMin: number;
   /** 两次齐射之间的冷却上限（秒） */
   cooldownMax: number;
+  /** 单次齐射内相邻两发之间的间隔（秒）；0 表示齐射内所有弹药同时发射 */
+  salvoInterval: number;
   /** 开局初始冷却下限（秒） */
   initialCooldownMin: number;
   /** 开局初始冷却上限（秒） */
@@ -71,6 +73,7 @@ export const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     range: 1100,
     cooldownMin: 1.6,
     cooldownMax: 2.4,
+    salvoInterval: 0,
     initialCooldownMin: 0.8,
     initialCooldownMax: 2.0,
     scatter: 60,
@@ -98,6 +101,7 @@ export const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     range: 1600,
     cooldownMin: 11,
     cooldownMax: 15,
+    salvoInterval: 0.5,
     initialCooldownMin: 6,
     initialCooldownMax: 9,
     scatter: 60,

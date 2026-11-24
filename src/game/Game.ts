@@ -165,13 +165,20 @@ export function initializeGame(): GameState {
     },
 
     updateProjectiles(dt: number) {
+      const field = getTerrainField();
       updateWeaponProjectiles(dt, {
         projectiles: this.projectiles,
         targets: this.ships,
+        field,
         worldWidth: W,
         worldHeight: H,
         onHit: (projectile, target, x, y) => {
           target.takeDamage(projectile.dmg);
+          const spec = getWeaponSpec(projectile.type);
+          emitBurst(x, y, spec.impactParticles, spec.impactColor);
+        },
+        onTerrainHit: (projectile, x, y) => {
+          // 鱼雷/炮弹撞上岛礁：爆炸消失，不穿过地形
           const spec = getWeaponSpec(projectile.type);
           emitBurst(x, y, spec.impactParticles, spec.impactColor);
         },
