@@ -1,5 +1,6 @@
 // 弹药结构定义在 src/weapons
 import type { Projectile } from "../weapons";
+import type { DodgeBehavior } from "./dodge";
 
 // 右键下达的航行目标（世界像素坐标）
 export interface SailOrder {
@@ -26,6 +27,8 @@ export interface ShipConfig {
   team: "red" | "blue";
   // 基准Y坐标（用于规避和回正），可选，缺省等于 y
   baseY?: number;
+  // 规避行为；缺省使用 DefaultDodgeBehavior，可按舰船类型替换
+  dodgeBehavior?: DodgeBehavior;
 }
 
 export interface Ship extends ShipConfig {

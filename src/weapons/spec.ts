@@ -92,7 +92,8 @@ export const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
   // 鱼雷：低频齐射，一次随机 3~5 发；其中一颗直取瞄准点，其余散开
   torp: {
     id: "torp",
-    speed: 150,
+    // 鱼雷速度调慢，给规避留出反应时间
+    speed: 120,
     damage: 30,
     radius: 34,
     salvoMin: 3,

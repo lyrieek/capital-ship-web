@@ -6,6 +6,8 @@ import { getGameInstance } from "../game/Game";
 import { getTerrainField, TERRAIN_AVOID_LOOK_AHEAD } from "../terrain";
 // 武器参数集中在 src/weapons
 import { getWeaponSpec, withinRange } from "../weapons";
+// 规避行为抽象：不同舰船可替换不同的规避逻辑
+import { DefaultDodgeBehavior, type DodgeBehavior } from "./dodge";
 export type { Ship, ShipConfig, SailOrder, ThreatItem } from "./ship";
 export { createShip, getTeamColors } from "./create-ship";
 
@@ -52,6 +54,12 @@ export class ShipImpl implements Ship {
   aimAngle: number;
   aimOrder: SailOrder | null;
 
+  // 规避行为（可按舰船类型替换）与本次规避的参数
+  dodgeBehavior: DodgeBehavior;
+  dodgeSpeedFactor: number;
+  dodgeDuration: number;
+  dodgeAmplitude: number;
+
   constructor(cfg: ShipConfig) {
     this.x = cfg.x ?? 0;
     this.y = cfg.y ?? 0;
@@ -89,6 +97,11 @@ export class ShipImpl implements Ship {
     this.recoil = 0;
     this.aimAngle = this.baseAngle;
     this.aimOrder = null;
+
+    this.dodgeBehavior = cfg.dodgeBehavior ?? new DefaultDodgeBehavior();
+    this.dodgeSpeedFactor = 0.65;
+    this.dodgeDuration = 0.85;
+    this.dodgeAmplitude = 42;
   }
 
   get alive() {
@@ -150,25 +163,13 @@ export class ShipImpl implements Ship {
   }
 
   startDodge(th: ThreatItem): void {
-    // 开始规避机动
-    const p = th.p;
-    // 预测的弹道击中Y坐标
-    const hitY = p.y + p.vy * th.t;
-
-    let side: 1 | -1 = 1;
-    // 判断应该向上还是向下规避
-    if (Math.abs(hitY - this.y) < 8) {
-      side = Math.random() < 0.5 ? -1 : 1;
-    } else {
-      side = hitY > this.y ? -1 : 1;
-    }
-
-    const margin = 55;
-    // 防止规避时超出边界
-    if (side < 0 && this.y < P.yMin + margin) side = 1;
-    if (side > 0 && this.y > P.yMax - margin) side = -1;
-
-    this.dodgeSide = side;
+    // 委托给规避行为决定向哪一侧机动，并携带本次规避的速度/时长/幅度
+    const plan = this.dodgeBehavior.decide(this, th);
+    if (!plan) return;
+    this.dodgeSide = plan.side;
+    this.dodgeSpeedFactor = plan.speedFactor;
+    this.dodgeDuration = plan.duration;
+    this.dodgeAmplitude = plan.amplitude;
     this.state = "dodge";
     this.dodgeT = 0;
     this.stateT = 0;
@@ -202,33 +203,42 @@ export class ShipImpl implements Ship {
         if (th) this.startDodge(th);
         else this.steerTowardTarget(dt);
       } else if (this.state === "dodge") {
-        // 规避状态：转向90度角度并快速移动
+        // 规避状态：朝垂直于航向的方向机动，幅度受限，避免过猛导致反而撞上鱼雷
         const targetAngle = this.baseAngle + (this.dodgeSide * Math.PI) / 2;
         this.angle = approachAngle(this.angle, targetAngle, rotStep);
 
-        this.y += this.dodgeSide * P.moveSpeed * P.dodgeFactor * dt;
-        this.y = clamp(this.y, P.yMin, P.yMax);
+        const targetY = clamp(this.baseY + this.dodgeSide * this.dodgeAmplitude, P.yMin, P.yMax);
+        const step = P.moveSpeed * this.dodgeSpeedFactor * dt;
+        if (Math.abs(targetY - this.y) <= step) this.y = targetY;
+        else this.y += Math.sign(targetY - this.y) * step;
 
         this.dodgeT += dt;
-        if (this.dodgeT >= P.dodgeDuration) {
+        // 规避时间到但鱼雷仍在来袭，继续规避，避免过早回正撞上雷
+        if (this.dodgeT >= this.dodgeDuration && !this.findThreat()) {
           this.state = "recover";
           this.stateT = 0;
         }
       } else if (this.state === "recover") {
-        // 回正状态：逐步转回基准角度并返回基准位置
+        // 回正状态：缓慢转回基准角度并返回基准航线
         this.angle = approachAngle(this.angle, this.baseAngle, rotStep);
 
         const dy = this.baseY - this.y;
-        const step = P.moveSpeed * P.dodgeFactor * dt;
+        const step = P.moveSpeed * P.normalFactor * dt;
         if (Math.abs(dy) <= step) this.y = this.baseY;
         else this.y += Math.sign(dy) * step;
 
-        const angDone = Math.abs(angleDiff(this.angle, this.baseAngle)) < 0.02;
-        const posDone = Math.abs(this.y - this.baseY) < 0.5;
-        if (angDone && posDone && this.stateT > 0.35) {
-          this.state = "normal";
-          this.angle = this.baseAngle;
-          this.y = this.baseY;
+        // 回正途中若又有鱼雷来袭，重新规避，避免回到基准航线时正好撞上雷
+        const th = this.findThreat();
+        if (th) {
+          this.startDodge(th);
+        } else {
+          const angDone = Math.abs(angleDiff(this.angle, this.baseAngle)) < 0.02;
+          const posDone = Math.abs(this.y - this.baseY) < 0.5;
+          if (angDone && posDone && this.stateT > 0.35) {
+            this.state = "normal";
+            this.angle = this.baseAngle;
+            this.y = this.baseY;
+          }
         }
       }
 
@@ -238,7 +248,7 @@ export class ShipImpl implements Ship {
       if (this.state === "normal") this.applyTerrainAvoidance(dt);
 
       // 计算水平速度（根据当前状态）
-      const speedFactor = this.state === "normal" ? P.normalFactor : P.dodgeFactor;
+      const speedFactor = this.state === "normal" ? P.normalFactor : this.state === "dodge" ? this.dodgeSpeedFactor : P.normalFactor;
       const hs = P.moveSpeed * speedFactor;
 
       // 更新水平位置并处理边界反弹
@@ -257,10 +267,10 @@ export class ShipImpl implements Ship {
       // 更新速度向量（用于预判）
       this.vx = this.dir * hs;
       if (this.state === "dodge") {
-        this.vy = this.dodgeSide * P.moveSpeed * P.dodgeFactor;
+        this.vy = this.dodgeSide * P.moveSpeed * this.dodgeSpeedFactor;
       } else if (this.state === "recover") {
         const dy = this.baseY - this.y;
-        this.vy = Math.abs(dy) > 1 ? Math.sign(dy) * P.moveSpeed * P.dodgeFactor : 0;
+        this.vy = Math.abs(dy) > 1 ? Math.sign(dy) * P.moveSpeed * P.normalFactor : 0;
       } else {
         this.vy = 0;
       }
