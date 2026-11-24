@@ -3,6 +3,7 @@ export * from "./types";
 export * from "./spec";
 export * from "./layout";
 export * from "./shipyard-zone";
+export * from "./shipyard-check";
 export * from "./field";
 export * from "./island";
 export * from "./reef";

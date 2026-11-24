@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Scene, FreeCamera } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
-import { getGameInstance, initializeGame, resetGame, getGameSpeedMultiplier } from "../game/Game";
+import { getGameInstance, initializeGame, getRestrictAreas, getGameSpeedMultiplier } from "../game/Game";
 import { disposeRender, getShipSelection, initRender, renderGame, getRestrictError } from "../game/render";
 import { panCameraBy, screenToWorld, getCameraFocus, setCameraFocus } from "../game/camera-focus";
 import { getZoom, zoomBy, applyZoomToCamera } from "../babylon";
 import { bindAttackKey } from "../game/selection";
 import { W, H } from "../game/utils";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
+import { getMaps, type GameMap } from "../map";
 import Hud from "./Hud";
+import MapSelect from "./MapSelect";
+import BattleResult from "./BattleResult";
 import Minimap from "./Minimap";
 import Model from "./Model";
 
@@ -21,8 +24,14 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
 }
 
-// Babylon.js render container for the 2D naval battle.
-export default function BattleCanvas() {
+interface BattleStageProps {
+  map: GameMap;
+  onChangeMap: () => void;
+}
+
+// 一场战斗：创建 Babylon 场景、驱动主循环，并在结束时提供返回选图的入口。
+// oxlint-disable-next-line max-lines-per-function
+function BattleStage({ map, onChangeMap }: BattleStageProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<Scene | null>(null);
@@ -48,8 +57,9 @@ export default function BattleCanvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    initializeGame();
-    const engine = initRender(canvas);
+    // 地图决定地形摆位与限制区；initializeGame 必须在 initRender 之前完成。
+    initializeGame(map);
+    const engine = initRender(canvas, getRestrictAreas());
     sceneRef.current = engine.scenes[0] ?? null;
     setSceneVersion((v) => v + 1);
 
@@ -167,31 +177,31 @@ export default function BattleCanvas() {
       sceneRef.current = null;
       setSceneVersion(0);
     };
-  }, []);
+  }, [map]);
 
+  // 游戏结束后回到选图界面；选择新地图会重新挂载整个战场。
   const handleRestart = useCallback(() => {
-    resetGame();
-    gameOverRef.current = false;
-    winnerTeamRef.current = null;
-    setGameOver(false);
-    setWinnerTeam(null);
-  }, []);
+    onChangeMap();
+  }, [onChangeMap]);
 
   const scene = sceneRef.current;
   const winnerText = winnerTeam === "red" ? t("hud.winnerRed") : winnerTeam === "blue" ? t("hud.winnerBlue") : t("hud.winnerDraw");
+  const results = gameOver ? (getGameInstance()?.record.getResults() ?? []) : [];
+  const subtitle = t("battleRecord.mapInfo", { name: t(map.nameKey) });
 
   return (
     <div className="battle-stage">
       <canvas ref={canvasRef} id="c" className="battle-canvas" />
       {scene ? <Hud key={sceneVersion} scene={scene} allow2x={true} /> : null}
       <Minimap />
-      <Model
+      <BattleResult
         scene={scene}
         open={gameOver}
         title={winnerText}
-        message={t("hud.restartPrompt")}
         titleColor={winnerTeam === "red" ? "#ff7b6b" : winnerTeam === "blue" ? "#7cc4ff" : "#cfe3f5"}
-        actions={[{ label: t("hud.restartButton"), onClick: handleRestart }]}
+        subtitle={subtitle}
+        results={results}
+        onRestart={handleRestart}
       />
       <Model
         scene={scene}
@@ -210,4 +220,15 @@ export default function BattleCanvas() {
       />
     </div>
   );
+}
+
+// 选图 → 战斗 → 结束后返回选图。战场以地图 id 为 key，换图时完整重建场景。
+export default function BattleCanvas() {
+  const [selectedMap, setSelectedMap] = useState<GameMap | null>(null);
+
+  if (!selectedMap) {
+    return <MapSelect maps={getMaps()} onSelect={setSelectedMap} />;
+  }
+
+  return <BattleStage key={selectedMap.id} map={selectedMap} onChangeMap={() => setSelectedMap(null)} />;
 }

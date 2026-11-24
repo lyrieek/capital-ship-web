@@ -81,8 +81,10 @@ export function createTerrainRender(options: TerrainRenderOptions): TerrainRende
     // 网格可能被冻结过（见下），更新前先解冻
     mesh.unfreezeWorldMatrix();
     mesh.position.copyFrom(worldToScene(item.x, item.y, z));
-    // 绕 Z 轴旋转 = 在海平面内打转（Z 是高度轴）。船厂用它决定朝陆 / 朝海
-    mesh.rotation.z = item.rotation ?? 0;
+    // 绕 Z 轴旋转 = 在海平面内打转（Z 是高度轴）。
+    // 注意：rotation 存的是世界角度（Y 向下、顺时针为正），场景坐标 Y 向上，
+    // 所以这里必须取反，否则船厂的“靠陆 / 靠海”会整个翻转。
+    mesh.rotation.z = -(item.rotation ?? 0);
     mesh.scaling.set(scale, scale, scale);
     // 地物是静态的：冻结世界矩阵，省掉每帧的矩阵计算。
     // 冻结后世界矩阵已算好，碰撞系统可以直接用，不用每帧重算。

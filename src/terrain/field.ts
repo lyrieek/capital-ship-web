@@ -170,8 +170,8 @@ export class TerrainField {
 }
 
 // 主场景的地物表单例：RestrictArea 摆船、Game 碰撞、ship 避让、render 层共用同一份数据。
-// 用模块级单例而不是层层传参，是因为 RestrictArea 在 Game.ts 模块加载时就创建了，
-// 那时还没有场景；而摆船发生在 initializeGame() 里，正好在这之后。
+// 用模块级单例而不是层层传参，是因为 initializeGame() 会先按地图建立地物表，
+// 再创建 RestrictArea 并摆船；渲染层随后直接复用同一份数据，不必层层透传。
 let current: TerrainField | null = null;
 
 /** 设置当前地物表（主场景初始化时调用一次；传 null 表示清空） */

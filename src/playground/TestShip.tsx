@@ -3,7 +3,8 @@ import type { Scene } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
 import { createOceanSurface } from "../expanse";
 import { createShip, type Ship } from "../ship/index";
-import { RestrictArea, getTeamRestrictBounds } from "../game/RestrictArea";
+import { RestrictAreaImpl } from "../game/RestrictAreaImpl";
+import { defaultMap } from "../map";
 import { H, P, W, approachAngle } from "../game/utils";
 import { VIEW_H, VIEW_W } from "../game/world";
 import { screenToWorld, setCameraFocus } from "../game/camera-focus";
@@ -153,10 +154,7 @@ function useShipScene(
 
     shipsRef.current = createShips();
     // 先定义地图行动限制区（按阵营），再画船；限制区虚线框在此一次性画出
-    const restrictAreas = [
-      new RestrictArea(getTeamRestrictBounds("red"), "red", true),
-      new RestrictArea(getTeamRestrictBounds("blue"), "blue", true),
-    ];
+    const restrictAreas = defaultMap.zones.map((zone) => new RestrictAreaImpl(zone));
     for (const area of restrictAreas) area.draw(scene);
 
     for (const ship of shipsRef.current) {

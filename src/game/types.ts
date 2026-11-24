@@ -1,6 +1,7 @@
 import type { Ship } from "../ship/ship";
 // 弹药结构已抽离到 src/weapons（游戏层只引用，不重复定义）
 import type { Projectile } from "../weapons";
+import type { BattleRecord } from "./BattleRecord";
 
 // Game types and interfaces
 export interface Vector2 {
@@ -23,6 +24,8 @@ export interface GameState {
   winnerTeam: "red" | "blue" | null;
   // 手动齐射剩余冷却时间（秒）
   manualFireCD: number;
+  // 本局战斗记录（存活时间 / 死亡原因 / 杀敌数）
+  record: BattleRecord;
 
   // 重置游戏到初始状态
   reset(): void;

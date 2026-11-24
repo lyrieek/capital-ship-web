@@ -7,6 +7,28 @@
   "minimap": {
     "title": "战术地图"
   },
+  "mapSelect": {
+    "title": "选择地图",
+    "subtitle": "选择一张战场开始战斗；战斗结束后可以重新选图。",
+    "start": "开始战斗",
+    "islandCount": "岛屿 {{count}}",
+    "reefCount": "礁石 {{count}}",
+    "zoneCount": "限制区 {{count}}",
+    "maps": {
+      "default": {
+        "name": "双子岛",
+        "description": "左右各有一座船厂岛，中央航道开阔，适合熟悉操作与正面交战。"
+      },
+      "strait": {
+        "name": "中央海峡",
+        "description": "南北两条岛链夹出狭长的中央水道，舰队只能沿海峡正面接敌，绕行空间很小。"
+      },
+      "archipelago": {
+        "name": "群岛浅滩",
+        "description": "岛屿与礁石错落分布，水道曲折，需要更多绕行与地形利用。"
+      }
+    }
+  },
   "hud": {
     "title": "2D 海战 · 自动对战",
     "weaponInfo": "主炮 10 伤害（曲射 · 射程 1100） · 鱼雷 30 伤害 ×3~5 · 规避转体 90°",
@@ -14,8 +36,27 @@
     "winnerRed": "红方胜利",
     "winnerBlue": "蓝方胜利",
     "winnerDraw": "同归于尽",
-    "restartPrompt": "是否重新开始新的战斗？",
+    "restartPrompt": "是否返回地图选择，开始新的战斗？",
     "restartButton": "重新开始"
+  },
+  "battleRecord": {
+    "mapInfo": "地图：{{name}}",
+    "team": "阵营",
+    "ship": "舰船",
+    "survival": "存活时间",
+    "kills": "杀敌数",
+    "deathReason": "死亡原因",
+    "alive": "存活",
+    "restart": "重新开始",
+    "teams": {
+      "red": "红方",
+      "blue": "蓝方"
+    },
+    "death": {
+      "shell": "主炮击沉",
+      "torp": "鱼雷击沉",
+      "unknown": "沉没"
+    }
   },
   "playground": {
     "controls": "控制面板",

@@ -5,10 +5,10 @@ import { useTranslation } from "react-i18next";
 import { getGameInstance, getRestrictAreas } from "../game/Game";
 import { getShipSelection } from "../game/render";
 import { focusCameraAt, getCameraFocus } from "../game/camera-focus";
-import { getTeamRestrictColor } from "../game/RestrictArea";
+import { getTeamRestrictColor } from "../map";
 import { WORLD_H, WORLD_W } from "../game/world";
 import { getViewHeight, getViewWidth } from "../babylon";
-import { getTerrainField, getTerrainSpec, islandRadiusAt, shipyardZoneLocal } from "../terrain";
+import { getTerrainField, getTerrainSpec, islandRadiusAt, SHIPYARD_LAND_BOXES, shipyardBoxLocal, shipyardZoneLocal } from "../terrain";
 
 // Internal resolution is 2x the displayed size for crisp lines.
 const MM_W = 440;
@@ -76,15 +76,17 @@ function drawTerrain(ctx: CanvasRenderingContext2D): void {
     }
 
     if (item.kind === "shipyard") {
-      // 船厂：跟着 rotation 一起转，码头（靠陆）画实心块，船坞（靠海）画检测框。
-      // 这样在海图上一眼能看出「厂子哪边靠陆、哪边靠海」。
-      const r = spec.radius * scale;
+      // 船厂：跟着 rotation 一起转，陆域设施画实心块，船坞（靠海）画检测框。
+      // 占地与主场景共用 SHIPYARD_LAND_BOXES，不会出现小地图和大地图不一致。
       const zone = shipyardZoneLocal(spec.radius, scale);
       ctx.save();
       ctx.translate(item.x * SCALE_X, item.y * SCALE_Y);
       ctx.rotate(item.rotation ?? 0);
       ctx.fillStyle = spec.color;
-      ctx.fillRect(0, -0.85 * r * SCALE_Y, 0.9 * r * SCALE_X, 1.7 * r * SCALE_Y);
+      for (const box of SHIPYARD_LAND_BOXES) {
+        const rect = shipyardBoxLocal(box, spec.radius, scale);
+        ctx.fillRect(rect.minX * SCALE_X, rect.minY * SCALE_Y, (rect.maxX - rect.minX) * SCALE_X, (rect.maxY - rect.minY) * SCALE_Y);
+      }
       ctx.strokeStyle = SHIPYARD_ZONE;
       ctx.lineWidth = 1;
       ctx.strokeRect(zone.minX * SCALE_X, zone.minY * SCALE_Y, (zone.maxX - zone.minX) * SCALE_X, (zone.maxY - zone.minY) * SCALE_Y);

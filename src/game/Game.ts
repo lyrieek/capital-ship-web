@@ -1,11 +1,13 @@
-// Game state singleton
+// 主游戏状态：地图、限制区、舰船、弹药与胜负判定。
 import type { GameState } from "./types";
 import { emitBurst, emitSmoke } from "./fx";
 import type { Ship } from "../ship/ship";
 import { clearParticles, renderGame } from "./render";
 import { resolveCollisions as resolveShipCollisions } from "./collision";
 import { H, W } from "./utils";
-import { RestrictArea, getTeamRestrictBounds } from "./RestrictArea";
+import { RestrictAreaImpl } from "./RestrictAreaImpl";
+import type { GameMap } from "../map";
+import { BattleRecord } from "./BattleRecord";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
 import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
 // 地物（岛屿 / 礁石 / 建筑）的数据与查询已抽离到 src/terrain
@@ -16,25 +18,24 @@ const END_DELAY = 3;
 // 手动齐射（F 键）的公共冷却，避免连续按键无限输出
 const MANUAL_FIRE_COOLDOWN = 2.5;
 
-// 地物表：主场景只建一次，摆船（RestrictArea）、舰船碰撞（resolveCollisions）、渲染层共用。
-// 必须在 initializeGame() 之前建好：initializeGame() 会调用 RestrictArea.createShip() 摆船，
-// 而摆船要避开岛礁，否则船会出生在岛上（动不了、打不中）。
-setTerrainField(new TerrainField(createTerrainItems(W, H)));
-
-// 行动限制区域：按阵营分别定义，供主游戏自动摆船与渲染层画虚线框复用
-const redRestrictArea = new RestrictArea(getTeamRestrictBounds("red"), "red", true);
-const blueRestrictArea = new RestrictArea(getTeamRestrictBounds("blue"), "blue", true);
-
-export function getRestrictAreas(): RestrictArea[] {
-  return [redRestrictArea, blueRestrictArea];
-}
-
 let gameInstance: GameState | null = null;
+let currentMap: GameMap | null = null;
+let restrictAreas: RestrictAreaImpl[] = [];
 
 export { gameInstance };
 
 export function getGameInstance(): GameState | null {
   return gameInstance;
+}
+
+/** 当前对局使用的地图 */
+export function getCurrentMap(): GameMap | null {
+  return currentMap;
+}
+
+/** 当前对局的行动限制区（Minimap 与渲染层共用） */
+export function getRestrictAreas(): readonly RestrictAreaImpl[] {
+  return restrictAreas;
 }
 
 // 当前倍速：1 或 2，由 [2x] 按钮切换（默认游戏已开启 2 倍速）
@@ -57,8 +58,28 @@ export function toggleGameSpeed(): number {
   return gameSpeed;
 }
 
+/** 按地图重建限制区与地物表；返回当前红蓝两方的限制区 */
+function prepareMap(map: GameMap): { red: RestrictAreaImpl; blue: RestrictAreaImpl } {
+  for (const area of restrictAreas) area.dispose();
+  currentMap = map;
+
+  // 摆船（RestrictArea）和碰撞都要查地物表，所以必须在 reset() 之前建好
+  setTerrainField(new TerrainField(createTerrainItems(W, H, map.terrain)));
+  restrictAreas = map.zones.map((zone) => new RestrictAreaImpl(zone));
+
+  const red = restrictAreas.find((area) => area.team === "red");
+  const blue = restrictAreas.find((area) => area.team === "blue");
+  if (!red || !blue) {
+    throw new Error(`[Game] 地图 "${map.id}" 缺少红方或蓝方限制区`);
+  }
+  return { red, blue };
+}
+
 // oxlint-disable-next-line max-lines-per-function
-export function initializeGame(): GameState {
+export function initializeGame(map: GameMap): GameState {
+  const { red, blue } = prepareMap(map);
+  const record = new BattleRecord();
+
   const game: GameState = {
     ships: [],
     projectiles: [],
@@ -67,6 +88,7 @@ export function initializeGame(): GameState {
     endTimer: null,
     winnerTeam: null,
     manualFireCD: 0,
+    record,
 
     reset() {
       this.projectiles.length = 0;
@@ -77,11 +99,12 @@ export function initializeGame(): GameState {
       this.manualFireCD = 0;
 
       this.ships = [
-        redRestrictArea.createShip({ team: "red", name: "红-1", nameKey: "shipHud.names.red1" }),
-        redRestrictArea.createShip({ team: "red", name: "红-2", nameKey: "shipHud.names.red2" }),
-        blueRestrictArea.createShip({ team: "blue", name: "蓝-1", nameKey: "shipHud.names.blue1" }),
-        blueRestrictArea.createShip({ team: "blue", name: "蓝-2", nameKey: "shipHud.names.blue2" }),
+        red.createShip({ team: "red", name: "红-1", nameKey: "shipHud.names.red1" }),
+        red.createShip({ team: "red", name: "红-2", nameKey: "shipHud.names.red2" }),
+        blue.createShip({ team: "blue", name: "蓝-1", nameKey: "shipHud.names.blue1" }),
+        blue.createShip({ team: "blue", name: "蓝-2", nameKey: "shipHud.names.blue2" }),
       ];
+      this.record.reset(this.ships, this.time);
     },
 
     fireShell(ship: Ship, target: Ship) {
@@ -173,7 +196,13 @@ export function initializeGame(): GameState {
         worldWidth: W,
         worldHeight: H,
         onHit: (projectile, target, x, y) => {
+          // 弹药的 owner 就是发射舰船，用对象身份反查，避免再给弹药加一层索引
+          const killer = this.ships.find((ship) => ship === projectile.owner) ?? null;
           target.takeDamage(projectile.dmg);
+          if (target.hp <= 0) {
+            // target 一定来自 this.ships；ProjectileTarget 只是更新器需要的最小接口
+            this.record.recordKill(killer, target as Ship, projectile.type, this.time);
+          }
           const spec = getWeaponSpec(projectile.type);
           emitBurst(x, y, spec.impactParticles, spec.impactColor);
         },
@@ -211,6 +240,7 @@ export function initializeGame(): GameState {
           if (this.endTimer === 0) {
             this.over = true;
             this.winnerTeam = teams.size === 1 ? [...teams][0] : null;
+            this.record.finalize(this.time);
           }
         }
       }

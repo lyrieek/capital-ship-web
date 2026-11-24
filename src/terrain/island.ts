@@ -8,8 +8,11 @@
 // 网格朝向：海平面是 XY 平面，相机在 -Z 一侧看向 +Z，
 // 所以高度沿 -Z 抬升（岛心最靠近相机，岸线沉到水面以下）。
 import { Color3, Mesh, type Scene, StandardMaterial, VertexData } from "@babylonjs/core";
+import { islandRadiusAt } from "./coastline";
 import type { TerrainSpec } from "./spec";
 import type { TerrainItem } from "./types";
+
+export { islandRadiusAt } from "./coastline";
 
 // 岸线沉到水面以下的深度：让岸线被海面自然遮住，避免看起来像「贴在海面上的一张饼」
 const SINK = 1.2;
@@ -20,22 +23,6 @@ const SEGMENTS = 30;
 // 沙滩 / 草地：顶点色直接烘进网格，材质保持白色受光即可
 const SAND = Color3.FromHexString("#e7d8ab");
 const GRASS = Color3.FromHexString("#4f7d52");
-
-// 海岸线：几个不同频率的正弦叠加当「伪噪声」。
-// 不引噪声库是因为形状必须可复现——同一个 seed 每次生成的岛屿完全一致，
-// 摆位表、碰撞半径、小地图才能对得上。
-function coastlineScale(angle: number, seed: number): number {
-  const phase = seed * 1.7;
-  return 1 + 0.12 * Math.sin(angle * 3 + phase) + 0.07 * Math.sin(angle * 7 + phase * 2.3) + 0.04 * Math.sin(angle * 13 + phase * 4.1);
-}
-
-/**
- * 岸线在指定角度上的半径（世界单位，未乘 item.scale）
- * 渲染和小地图共用同一个函数，保证小地图上的岛形和 3D 网格一致。
- */
-export function islandRadiusAt(angle: number, spec: TerrainSpec, seed: number): number {
-  return spec.radius * coastlineScale(angle, seed);
-}
 
 // 高度剖面：t=0 是岛心，t=1 是岸线；向岸边平滑降到 0，沙滩段几乎与海面齐平
 function heightProfile(t: number): number {

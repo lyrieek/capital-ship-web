@@ -12,7 +12,7 @@ import { VIEW_H, VIEW_W } from "./world";
 import { getCameraFocus, resetCameraFocus, updateCameraFocus } from "./camera-focus";
 import { bindPointerInput, ShipSelection } from "./selection";
 import { issueSelectionSail } from "./movement";
-import { RestrictArea, getTeamRestrictBounds } from "./RestrictArea";
+import type { RestrictAreaImpl } from "./RestrictAreaImpl";
 import { createBabylonScene, updateCameraEffect, worldToScene } from "../babylon";
 import { createParticleFx, type ParticleFx } from "./particle-fx";
 import { createShipHudLayer, type ShipHudLayer } from "../ship/hud";
@@ -69,7 +69,7 @@ function moveSelection(x: number, y: number): void {
 // 每艘舰船对应的可视对象（reset 会重建舰船，故按对象身份做增删）
 const shipVisuals = new Map<Ship, ShipVisual>();
 // 行动限制区域：按阵营分别定义，在画船前验证位置并画虚线框
-let restrictAreas: RestrictArea[] | null = null;
+let restrictAreas: RestrictAreaImpl[] | null = null;
 // 限制区验证错误信息（由 BattleCanvas 读取并弹 modal）
 let restrictError: string | null = null;
 
@@ -182,8 +182,10 @@ export function disposeRender() {
   terrainRender = null;
   weaponRender?.dispose();
   weaponRender = null;
+  // 限制区由 Game 持有并在下一局初始化时销毁；这里只清掉虚线框引用，
+  // 避免场景销毁后仍留下已释放的 LinesMesh。
   if (restrictAreas) {
-    for (const area of restrictAreas) area.dispose();
+    for (const area of restrictAreas) area.cancel();
     restrictAreas = null;
   }
   if (engine) {
@@ -193,7 +195,7 @@ export function disposeRender() {
   scene = null;
 }
 
-export function initRender(canvas: HTMLCanvasElement): Engine {
+export function initRender(canvas: HTMLCanvasElement, areas: readonly RestrictAreaImpl[]): Engine {
   disposeRender();
   const babylon = createBabylonScene({
     canvas,
@@ -217,9 +219,9 @@ export function initRender(canvas: HTMLCanvasElement): Engine {
   createWater();
   createTerrain();
 
-  // 先定义地图行动限制区（按阵营），再画船；限制区虚线框在此一次性画出。
-  // 限制区默认会避开地物：摆船时船不会落在岛上。
-  restrictAreas = [new RestrictArea(getTeamRestrictBounds("red"), "red", true), new RestrictArea(getTeamRestrictBounds("blue"), "blue", true)];
+  // 限制区由 Game 按当前地图创建；渲染层只负责画框。
+  // 先在画船前准备好，开局的越界检查才能读到同一批边界。
+  restrictAreas = [...areas];
   for (const area of restrictAreas) area.draw(scene);
 
   weaponRender = createWeaponRender({

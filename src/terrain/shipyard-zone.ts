@@ -12,7 +12,28 @@
 import type { TerrainItem } from "./types";
 
 /** 检测区在本地坐标里的范围（单位：spec.radius 的倍数）。+X 指向水面，-X 指向陆地。 */
-export const SHIPYARD_ZONE = { minX: 0.9, maxX: 2.4, minY: -0.7, maxY: 0.7 };
+export const SHIPYARD_ZONE = { minX: 0.9, maxX: 2.4, minY: -0.45, maxY: 0.45 };
+
+/** 船厂陆域设施的本地占地（单位：spec.radius 的倍数） */
+export interface ShipyardBox {
+  /** 设施 id：quay 码头 / shedTop & shedBottom 船台仓库 / crane 吊车基座 */
+  id: "quay" | "shedTop" | "shedBottom" | "crane";
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/**
+ * 陆域设施占地表。
+ * 与 shipyard.ts 的几何共用同一份数据；jib（吊臂）伸向水面，不算陆域设施。
+ */
+export const SHIPYARD_LAND_BOXES: readonly ShipyardBox[] = [
+  { id: "quay", minX: 0, maxX: 0.9, minY: -0.6, maxY: 0.6 },
+  { id: "shedTop", minX: 0.1, maxX: 0.62, minY: -0.5, maxY: -0.14 },
+  { id: "shedBottom", minX: 0.1, maxX: 0.62, minY: 0.14, maxY: 0.5 },
+  { id: "crane", minX: 0.72, maxX: 0.84, minY: -0.06, maxY: 0.06 },
+];
 
 /** 矩形（本地坐标，世界单位） */
 export interface LocalRect {
@@ -32,6 +53,16 @@ export function shipyardZoneLocal(radius: number, scale = 1): LocalRect {
   };
 }
 
+/** 陆域设施占地的本地矩形（世界单位，已乘 scale） */
+export function shipyardBoxLocal(box: ShipyardBox, radius: number, scale = 1): LocalRect {
+  return {
+    minX: radius * box.minX * scale,
+    maxX: radius * box.maxX * scale,
+    minY: radius * box.minY * scale,
+    maxY: radius * box.maxY * scale,
+  };
+}
+
 /** 世界坐标 → 船厂本地坐标（跟着 rotation 一起转） */
 export function toShipyardLocal(item: TerrainItem, x: number, y: number): { x: number; y: number } {
   const rot = item.rotation ?? 0;
@@ -40,6 +71,17 @@ export function toShipyardLocal(item: TerrainItem, x: number, y: number): { x: n
   const dx = x - item.x;
   const dy = y - item.y;
   return { x: cos * dx + sin * dy, y: -sin * dx + cos * dy };
+}
+
+/** 船厂本地坐标 → 世界坐标 */
+export function toShipyardWorld(item: TerrainItem, x: number, y: number): { x: number; y: number } {
+  const rot = item.rotation ?? 0;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  return {
+    x: item.x + cos * x - sin * y,
+    y: item.y + sin * x + cos * y,
+  };
 }
 
 /** 点是否在船厂的检测区（船坞）内 */

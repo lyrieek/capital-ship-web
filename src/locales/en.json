@@ -7,6 +7,28 @@
   "minimap": {
     "title": "Tactical Map"
   },
+  "mapSelect": {
+    "title": "Select Map",
+    "subtitle": "Pick a battlefield to start; you can choose another map after the battle.",
+    "start": "Start Battle",
+    "islandCount": "Islands {{count}}",
+    "reefCount": "Reefs {{count}}",
+    "zoneCount": "Zones {{count}}",
+    "maps": {
+      "default": {
+        "name": "Twin Islands",
+        "description": "A shipyard island on each side with a wide central channel; ideal for learning the controls and head-on fights."
+      },
+      "strait": {
+        "name": "Central Strait",
+        "description": "Northern and southern island chains squeeze the fleet into a narrow central channel with little room to flank."
+      },
+      "archipelago": {
+        "name": "Archipelago Shoals",
+        "description": "Scattered islands and reefs split the sea into winding channels that reward detours and terrain use."
+      }
+    }
+  },
   "hud": {
     "title": "2D Naval Battle · Auto Battle",
     "weaponInfo": "Main Gun 10 DMG (arc · range 1100) · Torpedo 30 DMG ×3-5 · Dodge Turn 90°",
@@ -14,8 +36,27 @@
     "winnerRed": "Red Victory",
     "winnerBlue": "Blue Victory",
     "winnerDraw": "Mutual Destruction",
-    "restartPrompt": "Start a new battle?",
+    "restartPrompt": "Return to map selection and start a new battle?",
     "restartButton": "Restart"
+  },
+  "battleRecord": {
+    "mapInfo": "Map: {{name}}",
+    "team": "Team",
+    "ship": "Ship",
+    "survival": "Survival",
+    "kills": "Kills",
+    "deathReason": "Fate",
+    "alive": "Survived",
+    "restart": "Restart",
+    "teams": {
+      "red": "Red",
+      "blue": "Blue"
+    },
+    "death": {
+      "shell": "Sunk by main gun",
+      "torp": "Sunk by torpedo",
+      "unknown": "Sunk"
+    }
   },
   "playground": {
     "controls": "Controls",
