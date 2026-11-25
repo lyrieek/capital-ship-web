@@ -8,9 +8,8 @@
 //
 // 边界、阵营、出生点等静态数据由地图层 RestrictArea 统一校验并持有；
 // 这里只保留运行期状态（enabled / 虚线框 / 地形占用判定）。
-import { Color3, MeshBuilder, type LinesMesh, type Scene } from "@babylonjs/core";
-import { clamp } from "./utils";
-import { worldToScene } from "../babylon";
+import { Color3, LinesMesh, VertexBuffer, VertexData, type Scene } from "@babylonjs/core";
+import { H, W, clamp } from "./utils";
 import { createShip } from "../ship/create-ship";
 import { getTerrainField } from "../terrain";
 import { MAP_TEAM_COLORS, type MapZone } from "../map/types";
@@ -29,6 +28,18 @@ const SPAWN_CLEARANCE = 60;
 const SPAWN_BAND_X = 650;
 const SPAWN_BAND_Y = 720;
 
+// ---- 限制区虚线样式 ----
+// 虚线一格的总长度（实线 + 间隔）；密度按周长自动换算
+const DASH_CYCLE = 60;
+// 实线占一格的比例（4 / 7，接近原来的 dashSize:gapSize）
+const DASH_RATIO = 4 / 7;
+// 虚线沿边框缓慢流动的速度（世界像素 / 秒）
+const DASH_FLOW_SPEED = 5;
+// 边框透明度：比原先的 0.35 更淡，避免抢走舰船的画面焦点
+const LINE_ALPHA = 0.2;
+// 每条虚线折线的点数：起点 / 拐角 / 终点
+const DASH_POINTS = 3;
+
 // 默认的「不可放船」判定：查当前地物表。
 // 独立成函数，playground 可以传入自己的判定而不改这里。
 function defaultIsBlocked(x: number, y: number, radius: number): boolean {
@@ -43,6 +54,18 @@ export class RestrictAreaImpl extends RestrictArea {
   /** 不可放船判定：以 (x, y) 为圆心、radius 为半径的圆是否压到陆地 */
   isBlocked: (x: number, y: number, radius: number) => boolean;
 
+  /** 虚线顶点缓冲：固定 (虚线数 + 1) 条三点折线，只改坐标不重建网格 */
+  private dashPositions: Float32Array | null = null;
+  /** 预留的折线条数（其中一条用于跨接缝的虚线分段） */
+  private dashLineCount = 0;
+  /** 虚线数量 / 实线长度 / 一格长度 / 周长 */
+  private dashCount = 0;
+  private dashLength = 0;
+  private dashCycle = 0;
+  private perimeter = 0;
+  /** 当前相位：沿周长向后移动，实现虚线缓慢流动 */
+  private dashOffset = 0;
+
   constructor(zone: MapZone, enabled = true, isBlocked: (x: number, y: number, radius: number) => boolean = defaultIsBlocked) {
     super(zone);
     this.enabled = enabled;
@@ -51,27 +74,142 @@ export class RestrictAreaImpl extends RestrictArea {
   }
 
   // 画限制区虚线框：颜色跟随阵营并带透明度。
-  // 密度按周长调整，避免大地图上出现超长虚线段。
+  // 虚线顶点由 update 方法逐帧改写，这里只创建固定拓扑的网格。
   draw(scene: Scene): LinesMesh | null {
     if (!this.enabled) return null;
     if (this.line) return this.line;
 
-    const points = [
-      worldToScene(this.minX, this.minY),
-      worldToScene(this.maxX, this.minY),
-      worldToScene(this.maxX, this.maxY),
-      worldToScene(this.minX, this.maxY),
-      worldToScene(this.minX, this.minY),
-    ];
-    const perimeter = 2 * (this.width + this.height);
-    const dashNb = clamp(Math.round(perimeter / 60), 48, 600);
-    this.line = MeshBuilder.CreateDashedLines(`restrictArea_${this.id}`, { points, dashNb, gapSize: 3, dashSize: 4 }, scene);
-    this.line.renderingGroupId = RG_HUD;
-    this.line.isPickable = false;
+    const w = this.width;
+    const h = this.height;
+    this.perimeter = 2 * (w + h);
+    if (this.perimeter <= 0) return null;
+    // 一条虚线 + 一条间隔为一格。上限按总长 / 60 控制观感，
+    // 下限保证一格不超过最短边，这样一条虚线最多只跨一个拐角，折线用三个点就够。
+    const shortestSide = Math.max(1, Math.min(w, h));
+    const byLength = Math.round(this.perimeter / DASH_CYCLE);
+    const bySide = Math.ceil(this.perimeter / shortestSide);
+    this.dashCount = clamp(Math.max(byLength, bySide), 4, 600);
+    this.dashCycle = this.perimeter / this.dashCount;
+    this.dashLength = this.dashCycle * DASH_RATIO;
+    // 正常情况下每格一条折线；跨过周长接缝的那一条会拆成两段，所以多预留一条
+    this.dashLineCount = this.dashCount + 1;
+    this.dashPositions = new Float32Array(this.dashLineCount * DASH_POINTS * 3);
+
+    const indices: number[] = [];
+    for (let i = 0; i < this.dashLineCount; i++) {
+      const base = i * DASH_POINTS;
+      // 三点折线拆成两段：起点→拐角、拐角→终点
+      indices.push(base, base + 1, base + 1, base + 2);
+    }
+
+    const data = new VertexData();
+    data.positions = this.dashPositions;
+    data.indices = indices;
+
+    const line = new LinesMesh(`restrictArea_${this.id}`, scene);
+    data.applyToMesh(line, true);
+    line.renderingGroupId = RG_HUD;
+    line.isPickable = false;
     // LinesMesh 自带 color / alpha，不必再挂 StandardMaterial
-    this.line.color = Color3.FromHexString(MAP_TEAM_COLORS[this.team]);
-    this.line.alpha = 0.35;
-    return this.line;
+    line.color = Color3.FromHexString(MAP_TEAM_COLORS[this.team]);
+    line.alpha = LINE_ALPHA;
+    this.line = line;
+    this.dashOffset = 0;
+    this.writeDashPositions();
+    return line;
+  }
+
+  /**
+   * 每帧推进虚线相位。
+   * 顶点缓冲的拓扑固定，只更新坐标，因此可以逐帧平滑移动而不用重建网格。
+   */
+  update(dt: number): void {
+    if (!this.line || !this.dashPositions || this.dashCycle <= 0) return;
+    this.dashOffset = (this.dashOffset + DASH_FLOW_SPEED * dt) % this.dashCycle;
+    this.writeDashPositions();
+  }
+
+  /** 按当前相位重写所有虚线顶点 */
+  private writeDashPositions(): void {
+    const positions = this.dashPositions;
+    if (!positions) return;
+
+    let line = 0;
+    for (let i = 0; i < this.dashCount; i++) {
+      const start = (this.dashOffset + i * this.dashCycle) % this.perimeter;
+      const end = start + this.dashLength;
+      if (end > this.perimeter) {
+        // 跨过周长接缝：拆成「接缝前」和「接缝后」两段，分别占用一条折线
+        this.writeDashSegment(line, start, start, this.perimeter);
+        this.writeDashSegment(line + 1, 0, 0, end - this.perimeter);
+        line += 2;
+        continue;
+      }
+      // 终点落在一条边内：中间点要么是拐角，要么退化成起点
+      this.writeDashSegment(line, start, this.cornerBetween(start, end) ?? start, end);
+      line += 1;
+    }
+
+    // 没用到的折线（包括拆段多出来的那条）写成退化线段，不产生可见像素
+    for (; line < this.dashLineCount; line++) {
+      this.writeDashSegment(line, 0, 0, 0);
+    }
+
+    this.line?.updateVerticesData(VertexBuffer.PositionKind, positions);
+  }
+
+  /** 把一条虚线（起点 / 拐角 / 终点）写进指定折线 */
+  private writeDashSegment(line: number, start: number, corner: number, end: number): void {
+    this.writeDashPoint(line, 0, start);
+    this.writeDashPoint(line, 1, corner);
+    this.writeDashPoint(line, 2, end);
+  }
+
+  /** 把周长上的参数 s 写到指定折线的指定顶点 */
+  private writeDashPoint(line: number, point: number, s: number): void {
+    const positions = this.dashPositions;
+    if (!positions) return;
+
+    const w = this.width;
+    const h = this.height;
+    let t = s % this.perimeter;
+    if (t < 0) t += this.perimeter;
+
+    // 按顺时针方向依次经过 上 → 右 → 下 → 左边
+    let x = 0;
+    let y = 0;
+    if (t <= w) {
+      x = this.minX + t;
+      y = this.minY;
+    } else if (t <= w + h) {
+      x = this.maxX;
+      y = this.minY + (t - w);
+    } else if (t <= w * 2 + h) {
+      x = this.maxX - (t - w - h);
+      y = this.maxY;
+    } else {
+      x = this.minX;
+      y = this.maxY - (t - w * 2 - h);
+    }
+
+    // 与 worldToScene 相同：世界坐标（左上原点、Y 向下）→ 场景坐标（居中、Y 向上）
+    const base = (line * DASH_POINTS + point) * 3;
+    positions[base] = x - W / 2;
+    positions[base + 1] = H / 2 - y;
+    positions[base + 2] = 0;
+  }
+
+  /** 一段时间内是否跨过矩形拐角；跨过才需要插入中间点 */
+  private cornerBetween(start: number, end: number): number | null {
+    const w = this.width;
+    const h = this.height;
+    const c1 = w;
+    const c2 = w + h;
+    const c3 = w * 2 + h;
+    if (c1 > start && c1 < end) return c1;
+    if (c2 > start && c2 < end) return c2;
+    if (c3 > start && c3 < end) return c3;
+    return null;
   }
 
   // 校验船位置：越界或压在岛礁 / 建筑上时返回错误信息，由调用方决定如何提示。
@@ -138,6 +276,7 @@ export class RestrictAreaImpl extends RestrictArea {
       this.line.dispose();
       this.line = null;
     }
+    this.dashPositions = null;
   }
 
   dispose(): void {

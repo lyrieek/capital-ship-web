@@ -5,10 +5,10 @@ import { createOceanSurface } from "../expanse";
 import { createShip, type Ship } from "../ship/index";
 import { RestrictAreaImpl } from "../game/RestrictAreaImpl";
 import { defaultMap } from "../map";
-import { H, P, W, approachAngle } from "../game/utils";
+import { H, W } from "../game/utils";
 import { MIN_VIEW_H, MIN_VIEW_W } from "../game/world";
 import { screenToWorld, setCameraFocus } from "../game/camera-focus";
-import { issueSelectionSail, updateSailOrder } from "../game/movement";
+import { issueSelectionSail } from "../game/movement";
 import { bindAttackKey, bindPointerInput, ShipSelection } from "../game/selection";
 import { createBabylonScene, worldToScene } from "../babylon";
 import { createShipHudLayer } from "../ship/hud";
@@ -34,7 +34,11 @@ function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean, scene
   visual.mesh.setEnabled(alive);
   visual.hud.setVisible(alive);
   visual.ring.mesh.setEnabled(alive && selected);
-  if (!alive) return;
+  if (!alive) {
+    // 船已阵亡：导航虚线必须一起清掉，否则会残留在海面上
+    disposeNavLine(visual);
+    return;
+  }
 
   // 航行导航虚线：仅选中且有航行目标时显示，每帧重新计算不残留旧点
   if (selected) {
@@ -56,24 +60,8 @@ function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean, scene
 
 // 调试页只演示巡航与右键航行，不触发武器逻辑
 function stepShip(ship: Ship, dt: number): void {
-  if (!ship.alive) return;
-
-  ship.hitFlash = Math.max(0, ship.hitFlash - dt * 4);
-
-  // 有航行指令时由公共指令逻辑接管；到达后恢复横向巡航
-  if (updateSailOrder(ship, dt)) return;
-
-  const speed = P.moveSpeed * P.normalFactor;
-  ship.angle = approachAngle(ship.angle, ship.dir > 0 ? 0 : Math.PI, P.turnRate * dt);
-  ship.x += ship.dir * speed * dt;
-  if (ship.x < ship.minX) {
-    ship.x = ship.minX;
-    ship.dir = 1;
-  }
-  if (ship.x > ship.maxX) {
-    ship.x = ship.maxX;
-    ship.dir = -1;
-  }
+  // 统一走舰船自身的行动模式 / 规避 / 手动指令，避免 playground 与主游戏两套 AI
+  ship.update(dt);
 }
 
 // F 键：选中的舰船向鼠标所在世界位置开火（仅演示命中与血条变化）
@@ -199,6 +187,7 @@ function useShipScene(
 
       timeRef.current += dt;
       oceanSurface.refresh(timeRef.current);
+      for (const area of restrictAreas) area.update(dt);
 
       selection.retain(shipsRef.current);
       for (const ship of shipsRef.current) {

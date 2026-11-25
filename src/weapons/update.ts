@@ -9,7 +9,7 @@ export interface ProjectileUpdateOptions {
   projectiles: Projectile[];
   /** 可命中的目标 */
   targets: ProjectileTarget[];
-  /** 地形场（用于弹药与岛礁碰撞；缺省则不检查地形） */
+  /** 地形场（只用于鱼雷与岛礁碰撞；炮弹曲射越过地形；缺省则不检查地形） */
   field?: TerrainField | null;
   /** 战场宽度 */
   worldWidth: number;
@@ -65,18 +65,6 @@ export function updateProjectiles(dt: number, options: ProjectileUpdateOptions):
   const alive: Projectile[] = [];
 
   for (const projectile of projectiles) {
-    // 尚未到激活时间：递减 delay，不推进位置，不减少寿命
-    const delay = projectile.delay;
-    if (delay !== undefined && delay !== null && delay > 0) {
-      const next = delay - dt;
-      if (next > 0) {
-        projectile.delay = next;
-        alive.push(projectile);
-        continue;
-      }
-      projectile.delay = 0;
-    }
-
     advance(projectile, dt);
 
     projectile.trail.push(projectile.x, projectile.y);
@@ -90,8 +78,9 @@ export function updateProjectiles(dt: number, options: ProjectileUpdateOptions):
       continue;
     }
 
-    // 撞上岛礁：地形是固体障碍物，弹药触碰即爆炸消失
-    if (field && field.isBlockedCircle(projectile.x, projectile.y, projectile.r)) {
+    // 只有鱼雷会被岛礁挡住：鱼雷在水面航行，撞上陆地就爆炸。
+    // 炮弹是曲射火力，从岛屿上方飞过，不应该被地形拦截。
+    if (projectile.type === "torp" && field && field.isBlockedCircle(projectile.x, projectile.y, projectile.r)) {
       projectile.dead = true;
       options.onTerrainHit?.(projectile, projectile.x, projectile.y);
       continue;

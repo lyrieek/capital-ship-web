@@ -37,22 +37,16 @@ export interface GameState {
   fireShell(ship: Ship, target: Ship): void;
 
   /**
-   * 发射鱼雷
-   * @param ship: 发射舰船, target: 目标舰船
+   * 向世界坐标点发射一发鱼雷
+   * @param ship: 发射舰船, x: 目标点 X, y: 目标点 Y, shotIndex: 这一发在齐射中的序号
    */
-  fireTorpedo(ship: Ship, target: Ship): void;
+  fireTorpedoAt(ship: Ship, x: number, y: number, shotIndex?: number): void;
 
   /**
    * 向世界坐标点开火主炮
    * @param ship: 发射舰船, x: 目标点 X, y: 目标点 Y
    */
   fireShellAt(ship: Ship, x: number, y: number): void;
-
-  /**
-   * 向世界坐标点开火鱼雷
-   * @param ship: 发射舰船, x: 目标点 X, y: 目标点 Y
-   */
-  fireTorpedoAt(ship: Ship, x: number, y: number): void;
 
   /**
    * 命令选中舰船向世界坐标点齐射（默认对准鼠标位置）

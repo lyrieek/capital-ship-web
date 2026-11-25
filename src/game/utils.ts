@@ -85,3 +85,9 @@ export function approachAngle(cur: number, target: number, step: number): number
   if (Math.abs(d) <= step) return target;
   return cur + Math.sign(d) * step;
 }
+
+// 将数值cur逐步接近目标值target，每步最大变化为step（用于速度平滑）
+export function approachValue(cur: number, target: number, step: number): number {
+  if (Math.abs(target - cur) <= step) return target;
+  return cur + Math.sign(target - cur) * step;
+}

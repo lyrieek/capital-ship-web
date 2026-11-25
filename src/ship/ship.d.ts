@@ -1,6 +1,18 @@
 // 弹药结构定义在 src/weapons
 import type { Projectile } from "../weapons";
-import type { DodgeBehavior } from "./dodge";
+import type { ActionMode } from "./action/ActionMode";
+import type { EvasionBehavior } from "./evasion";
+
+/** 舰种：小型舰 / 大型舰。大型舰行为尚未实现，当前仅预留类型。 */
+export type ShipKind = "small" | "capital";
+
+/**
+ * 大型舰能力占位：后续在这里扩展「可停船炮战 / 更慢转向 / 更远射界」等特性。
+ * TODO(大型舰): 大型舰可以停船开炮（speedFactor 可到 0），小型舰最低 0.7。
+ */
+export interface CapitalShipTraits {
+  canHalt?: boolean;
+}
 
 // 右键下达的航行目标（世界像素坐标）
 export interface SailOrder {
@@ -8,7 +20,26 @@ export interface SailOrder {
   y: number;
 }
 
+/**
+ * 进行中的鱼雷齐射队列。
+ * 齐射间隔由舰船自己计时、逐发创建弹药；舰船沉没后队列随之消失，
+ * 不会再出现「沉船后提前摆好的鱼雷陆续飞出去」。
+ */
+export interface TorpedoVolley {
+  /** 已发射数量（决定下一发是精准弹还是散布弹） */
+  fired: number;
+  /** 还没打出去的数量 */
+  remaining: number;
+  /** 距下一发的剩余时间（秒） */
+  timer: number;
+  /** 齐射开始时锁定的瞄准点 */
+  aimX: number;
+  aimY: number;
+}
+
 export interface ShipConfig {
+  // 舰种；缺省为小型舰
+  kind?: ShipKind;
   // X坐标，可选；未设置时由 RestrictArea 自动摆船分配
   x?: number;
   // Y坐标，可选；未设置时由 RestrictArea 自动摆船分配
@@ -27,8 +58,17 @@ export interface ShipConfig {
   team: "red" | "blue";
   // 基准Y坐标（用于规避和回正），可选，缺省等于 y
   baseY?: number;
-  // 规避行为；缺省使用 DefaultDodgeBehavior，可按舰船类型替换
-  dodgeBehavior?: DodgeBehavior;
+  // 巡航速度系数（相对 P.moveSpeed）；缺省使用 P.normalFactor
+  cruiseFactor?: number;
+  // 行动模式速度倍率下限 / 上限；缺省 0.7 / 1.6
+  speedMin?: number;
+  speedMax?: number;
+  // 速度倍率每秒变化量；缺省 1.2
+  accelRate?: number;
+  // 规避行为；缺省使用 DefaultEvasionBehavior，可按舰船类型替换
+  evasionBehavior?: EvasionBehavior;
+  // 行动模式；缺省按舰种创建，小型舰为 SmallShipAction
+  actionMode?: ActionMode;
 }
 
 export interface Ship extends ShipConfig {
@@ -36,6 +76,8 @@ export interface Ship extends ShipConfig {
   x: number;
   // Y坐标
   y: number;
+  // 舰种
+  kind: ShipKind;
   // 航向方向：1-右，-1-左
   dir: 1 | -1;
   // 最小X坐标（左边界），由 RestrictArea 统一设置，缺省 -Infinity
@@ -48,8 +90,26 @@ export interface Ship extends ShipConfig {
   dark: string;
   // 基准Y坐标（用于规避和回正）
   baseY: number;
-  // 当前航行指令；null 表示按原航线自动巡航
+  // 当前航行指令；null 表示按行动模式自动行动
   order: SailOrder | null;
+  // 当前行动模式锁定的目标；行动模式每帧维护，供开火逻辑复用
+  target: Ship | null;
+  // 行动模式实例（决策层），移动由 locomotion 统一执行
+  actionMode: ActionMode;
+  // 巡航速度系数（相对 P.moveSpeed）
+  cruiseFactor: number;
+  // 当前速度倍率（相对巡航速度），由 locomotion 平滑逼近
+  speedFactor: number;
+  // 行动模式允许的速度倍率范围
+  speedMin: number;
+  speedMax: number;
+  // 速度倍率每秒变化量
+  accelRate: number;
+  // 转向疲劳（转动意愿值）：实际转过 180° 累计到 1；
+  // 疲劳越高，小幅航向修正越容易被忽略，避免来回摆；直线航行 / 减速会衰减
+  turnFatigue: number;
+  // 连续卡位时间（秒）：想走却几乎没有净位移时累计，触发脱困转向
+  stuckT: number;
   // 当前生命值
   hp: number;
   // 受损后下一次产生烟雾的剩余时间
@@ -64,15 +124,21 @@ export interface Ship extends ShipConfig {
   angle: number;
   /**
    * 舰船状态
-   * normal-正常，dodge-规避，recover-回正
+   * normal-正常，dodge-规避（沿用旧命名以兼容 HUD/i18n），recover-回正
    */
   state: "normal" | "dodge" | "recover";
   // 状态计时器
   stateT: number;
   // 规避计时器
-  dodgeT: number;
+  evasionT: number;
   // 规避方向：1-上，-1-下
-  dodgeSide: 1 | -1;
+  evasionSide: 1 | -1;
+  // 规避行为实现
+  evasionBehavior: EvasionBehavior;
+  // 本次规避的速度系数 / 持续时间 / 横向幅度
+  evasionSpeedFactor: number;
+  evasionDuration: number;
+  evasionAmplitude: number;
   // X方向速度
   vx: number;
   // Y方向速度
@@ -81,6 +147,8 @@ export interface Ship extends ShipConfig {
   gunCD: number;
   // 鱼雷冷却时间
   torpCD: number;
+  // 进行中的鱼雷齐射队列；由舰船逐发发射，船沉后自动作废
+  torpVolley: TorpedoVolley | null;
   // 被击闪白效果
   hitFlash: number;
   // 后坐力效果
@@ -97,7 +165,7 @@ export interface Ship extends ShipConfig {
   // 查找来袭威胁（炮弹/鱼雷）
   findThreat(): ThreatItem | null;
   // 开始规避机动
-  startDodge(th: ThreatItem): void;
+  startEvasion(th: ThreatItem): void;
   // 更新舰船状态
   update(dt: number): void;
   // 受到伤害

@@ -131,7 +131,11 @@ function syncShips(game: GameState) {
     visual.mesh.setEnabled(alive);
     visual.hud.setVisible(alive);
     visual.ring.mesh.setEnabled(alive && selected);
-    if (!alive) continue;
+    if (!alive) {
+      // 船已阵亡：导航虚线必须一起清掉，否则会残留在海面上
+      disposeNavLine(visual);
+      continue;
+    }
 
     // 航行导航虚线：仅选中且有航行目标时显示，每帧重新计算不残留旧点
     if (selected) {
@@ -252,6 +256,8 @@ export function resizeRender(width: number, height: number): void {
 
 export function renderGame(game: GameState, dt = 1 / 60) {
   if (!scene) return;
+  // 限制区虚线缓慢流动：只改顶点缓冲，不重建网格
+  for (const area of restrictAreas ?? []) area.update(dt);
   // 大地图视口：跟随选中舰队或交战双方质心；minimap 跳转后短暂保持手动视角
   updateCameraFocus(scene, game.ships, shipSelection?.list ?? [], dt);
   // 相机轻微倾斜与摆动（可选，受 babylon/camera 模块开关控制）；放在焦点更新之后

@@ -16,6 +16,10 @@ const STATE_KEYS = {
   recover: "shipHud.state.recover",
 } as const;
 
+// TODO(调试HUD): 显示行动模式阶段（search/approach/engage/loop）、环绕圈、
+// 期望航向、当前速度倍率、转向疲劳、卡位计时、鱼雷齐射队列，
+// 以及贴边状态（平行航向 / 到边界距离 / 索敌权重），方便调参与观察 AI 决策。
+
 export interface ShipHud {
   setVisible(visible: boolean): void;
   sync(ship: Ship): void;

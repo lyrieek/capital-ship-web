@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Scene, FreeCamera } from "@babylonjs/core";
 import { useTranslation } from "react-i18next";
-import { getGameInstance, initializeGame, getRestrictAreas, getGameSpeedMultiplier } from "../game/Game";
+import { getGameInstance, initializeGame, getRestrictAreas, getGameSpeedMultiplier, clearGameInstance } from "../game/Game";
 import { disposeRender, getShipSelection, initRender, resizeRender, renderGame, getRestrictError } from "../game/render";
 import { panCameraBy, screenToWorld, getCameraFocus, setCameraFocus } from "../game/camera-focus";
+import { setTerrainField } from "../terrain";
 import { getZoom, zoomBy, applyZoomToCamera } from "../babylon";
 import { bindAttackKey } from "../game/selection";
 import { W, H } from "../game/utils";
@@ -214,6 +215,8 @@ function BattleStage({ map, onChangeMap }: BattleStageProps) {
       canvas.removeEventListener("wheel", handleWheel);
       engine.stopRenderLoop();
       disposeRender();
+      clearGameInstance();
+      setTerrainField(null);
       sceneRef.current = null;
       setSceneVersion(0);
     };

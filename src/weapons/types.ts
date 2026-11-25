@@ -56,8 +56,6 @@ export interface Projectile {
   dmg: number;
   /** 剩余生命时间 */
   life: number;
-  /** 延迟激活时间（秒）；齐射内每发之间的间隔，0 表示立即飞行 */
-  delay?: number;
   /** 轨迹点坐标列表 [x1,y1,x2,y2,...] */
   trail: number[];
   /** 是否已标记为删除 */

@@ -76,15 +76,7 @@ function scatterPoint(target: Point, radius: number, random: () => number, bound
 }
 
 /** 构造单发弹药 */
-function createProjectile(
-  spec: WeaponSpec,
-  owner: ProjectileOwner,
-  from: Point,
-  aim: Point,
-  bend: number,
-  random: () => number,
-  delay = 0,
-): Projectile {
+function createProjectile(spec: WeaponSpec, owner: ProjectileOwner, from: Point, aim: Point, bend: number, random: () => number): Projectile {
   const side: 1 | -1 = random() < 0.5 ? 1 : -1;
   const curve = buildCurve(from, aim, bend, side);
   // 用曲线实际长度换算飞行时长，弹速才能大致恒定
@@ -101,10 +93,40 @@ function createProjectile(
     dmg: spec.damage,
     // 寿命由射程决定：弹药最多飞到射程边缘，不会一路飞到地图边界
     life: spec.range / spec.speed,
-    delay,
     trail: [],
     arc: { curve, t: 0, duration },
   };
+}
+
+/** 单发开火参数：shotIndex 决定这一发是精准弹还是散布弹 */
+export interface FireShotParams extends FireParams {
+  /** 这一发在齐射中的序号（从 0 开始） */
+  shotIndex?: number;
+}
+
+/**
+ * 发射齐射中的一发，立即生成弹药（不存在弹药自身的延迟）。
+ * 鱼雷的分时发射由舰船的发射队列控制：船沉了队列就没了，不会出现沉船后还在冒雷。
+ * @param id 武器类型
+ * @param owner 发射平台
+ * @param from 发射点（平台中心）
+ * @param aim 目标点
+ * @param params 开火参数
+ * @returns 这一发的弹药
+ */
+export function fireWeaponShot(id: WeaponId, owner: ProjectileOwner, from: Point, aim: Point, params: FireShotParams = {}): Projectile {
+  const spec = getWeaponSpec(id);
+  const random = params.random ?? Math.random;
+  const scatter = params.scatter ?? spec.scatter;
+  const bend = params.bend ?? spec.bend;
+  const shotIndex = params.shotIndex ?? 0;
+  // 目标点先限制在画面内，再叠加这一发的随机散布
+  const target = clampToBounds(aim, params.bounds);
+  const aimPoint = shotIndex < spec.accurateCount ? target : scatterPoint(target, scatter, random, params.bounds);
+  const angle = Math.atan2(aimPoint.y - from.y, aimPoint.x - from.x);
+  const muzzle = muzzlePoint(from, angle, spec.muzzleOffset);
+  params.onMuzzle?.(muzzle);
+  return createProjectile(spec, owner, muzzle, aimPoint, bend, random);
 }
 
 /**
@@ -119,23 +141,11 @@ function createProjectile(
 export function fireWeapon(id: WeaponId, owner: ProjectileOwner, from: Point, aim: Point, params: FireParams = {}): Projectile[] {
   const spec = getWeaponSpec(id);
   const random = params.random ?? Math.random;
-  const scatter = params.scatter ?? spec.scatter;
-  const bend = params.bend ?? spec.bend;
-  const count = Math.max(1, params.salvo ?? rollSalvo(spec, random));
+  const salvo = Math.max(1, params.salvo ?? rollSalvo(spec, random));
   const projectiles: Projectile[] = [];
-  // 目标点先限制在画面内，再叠加每发的随机散布
-  const target = clampToBounds(aim, params.bounds);
-  // 齐射内相邻两发之间的间隔（秒），受倍速按钮约束（dt 已包含倍速）
-  const salvoInterval = spec.salvoInterval ?? 0;
-
-  for (let i = 0; i < count; i++) {
-    // 齐射里的前几发是「精准弹」：直取瞄准点；其余的随机散布开
-    const aimPoint = i < spec.accurateCount ? target : scatterPoint(target, scatter, random, params.bounds);
-    const angle = Math.atan2(aimPoint.y - from.y, aimPoint.x - from.x);
-    const muzzle = muzzlePoint(from, angle, spec.muzzleOffset);
-    // 每发之间递增 delay，实现分时发射；第 0 发 delay=0 立即飞出
-    projectiles.push(createProjectile(spec, owner, muzzle, aimPoint, bend, random, i * salvoInterval));
-    params.onMuzzle?.(muzzle);
+  // 一次性齐射：所有弹药同帧生成。需要分时发射时由舰船逐发调用 fireWeaponShot。
+  for (let i = 0; i < salvo; i++) {
+    projectiles.push(fireWeaponShot(id, owner, from, aim, { ...params, salvo, random, shotIndex: i }));
   }
   return projectiles;
 }

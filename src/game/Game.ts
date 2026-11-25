@@ -9,7 +9,7 @@ import { RestrictAreaImpl } from "./RestrictAreaImpl";
 import type { GameMap } from "../map";
 import { BattleRecord } from "./BattleRecord";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
-import { clampToBounds, fireWeapon, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
+import { clampToBounds, fireWeapon, fireWeaponShot, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
 // 地物（岛屿 / 礁石 / 建筑）的数据与查询已抽离到 src/terrain
 import { createTerrainItems, getTerrainField, setTerrainField, TerrainField } from "../terrain";
 
@@ -118,16 +118,6 @@ export function initializeGame(map: GameMap): GameState {
       for (const projectile of projectiles) this.projectiles.push(projectile);
     },
 
-    fireTorpedo(ship: Ship, target: Ship) {
-      const spec = getWeaponSpec("torp");
-      const from = { x: ship.x, y: ship.y };
-      const aim = predictAim(from, target, spec.speed);
-      const projectiles = fireWeapon("torp", ship, from, aim, {
-        bounds: { width: W, height: H, margin: 20 },
-      });
-      for (const projectile of projectiles) this.projectiles.push(projectile);
-    },
-
     focusFireAt(ships: readonly Ship[], x: number, y: number): void {
       if (this.over || this.manualFireCD > 0) return;
 
@@ -160,19 +150,12 @@ export function initializeGame(map: GameMap): GameState {
       for (const projectile of projectiles) this.projectiles.push(projectile);
     },
 
-    // 向世界坐标点开火鱼雷（不预测目标，直取给定点）
-    fireTorpedoAt(ship: Ship, x: number, y: number) {
+    // 向世界坐标点发射一发鱼雷（不预测目标，直取给定点）；
+    // 分时齐射由舰船的发射队列逐发调用本方法。
+    fireTorpedoAt(ship: Ship, x: number, y: number, shotIndex = 0) {
       const from = { x: ship.x, y: ship.y };
-      const projectiles = fireWeapon(
-        "torp",
-        ship,
-        from,
-        { x, y },
-        {
-          bounds: { width: W, height: H, margin: 20 },
-        },
-      );
-      for (const projectile of projectiles) this.projectiles.push(projectile);
+      const projectile = fireWeaponShot("torp", ship, from, { x, y }, { shotIndex, bounds: { width: W, height: H, margin: 20 } });
+      this.projectiles.push(projectile);
     },
 
     burst(x: number, y: number, n: number, color: string) {
@@ -207,7 +190,7 @@ export function initializeGame(map: GameMap): GameState {
           emitBurst(x, y, spec.impactParticles, spec.impactColor);
         },
         onTerrainHit: (projectile, x, y) => {
-          // 鱼雷/炮弹撞上岛礁：爆炸消失，不穿过地形
+          // 鱼雷撞上岛礁：爆炸消失，不穿过地形（炮弹不触发，曲射越过岛屿）
           const spec = getWeaponSpec(projectile.type);
           emitBurst(x, y, spec.impactParticles, spec.impactColor);
         },
@@ -261,4 +244,9 @@ export function resetGame() {
     gameInstance.reset();
   }
   clearParticles();
+}
+
+/** 离开战斗界面时清空当前对局，避免 playground 等页面误用上一局的目标/弹药 */
+export function clearGameInstance(): void {
+  gameInstance = null;
 }

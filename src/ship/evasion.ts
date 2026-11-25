@@ -1,11 +1,17 @@
-// 规避行为抽象：不同舰船可使用不同规避逻辑（未来如驱逐舰为战列舰主动挡雷）。
-// 当前所有舰船缺省使用 DefaultDodgeBehavior。
+// 规避行为抽象（原 Dodge，改称 Evasion）：不同舰船可使用不同规避逻辑
+// （未来如驱逐舰为战列舰主动挡雷）。
+// 当前所有舰船缺省使用 DefaultEvasionBehavior。
+//
+// TODO(鱼雷规避): 现在仍是固定幅度横移。后续改为候选机动评分：
+//   枚举 左/右横移、加速、减速、加速+横移、减速+横移，
+//   按与全部来袭鱼雷的最近接近余量 + 地形/边界/脱离交战代价选最优，
+//   并锁定 0.4~0.8 秒，避免每帧来回切换加速/减速。
 import type { Ship, ThreatItem } from "./ship";
 import { clamp, P } from "../game/utils";
 import { getWeaponSpec } from "../weapons";
 import { getGameInstance } from "../game/Game";
 
-export interface DodgePlan {
+export interface EvasionPlan {
   // 规避方向：1-向上，-1-向下
   side: 1 | -1;
   // 规避阶段的速度系数（相对基础航速），用于限制机动幅度
@@ -19,16 +25,16 @@ export interface DodgePlan {
 /**
  * 规避行为抽象：决定一艘舰船面对来袭威胁时该如何规避。
  * 不同舰船可传入不同的行为实现（未来如驱逐舰为战列舰主动挡雷）；
- * 缺省所有舰船使用 DefaultDodgeBehavior。
+ * 缺省所有舰船使用 DefaultEvasionBehavior。
  */
-export interface DodgeBehavior {
+export interface EvasionBehavior {
   /**
    * 根据来袭威胁决定本次规避方案；返回 null 表示不规避。
    */
-  decide(ship: Ship, threat: ThreatItem): DodgePlan | null;
+  decide(ship: Ship, threat: ThreatItem): EvasionPlan | null;
 }
 
-export const DEFAULT_PLAN: DodgePlan = {
+export const DEFAULT_EVASION_PLAN: EvasionPlan = {
   side: 1,
   // 规避时仅略快于正常巡航（正常 0.5，规避 0.65），避免机动过猛
   speedFactor: 0.65,
@@ -51,10 +57,10 @@ function closestApproachToPoint(q: { x: number; y: number; vx: number; vy: numbe
   return { dist: Math.hypot(cx - px, cy - py) };
 }
 
-export class DefaultDodgeBehavior implements DodgeBehavior {
-  private readonly plan: DodgePlan = DEFAULT_PLAN;
+export class DefaultEvasionBehavior implements EvasionBehavior {
+  private readonly plan: EvasionPlan = DEFAULT_EVASION_PLAN;
 
-  decide(ship: Ship, threat: ThreatItem): DodgePlan | null {
+  decide(ship: Ship, threat: ThreatItem): EvasionPlan | null {
     const p = threat.p;
     // 预测的弹道击中 Y 坐标，用于平局时的兜底方向（远离冲击点）
     const hitY = p.y + p.vy * threat.t;

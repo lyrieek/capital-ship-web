@@ -4,7 +4,7 @@
 
 ## 当前功能
 
-- 红蓝双方各有两艘舰船；舰船巡航寻找敌舰，并自动使用主炮和鱼雷交战。
+- 红蓝双方各有两艘舰船；舰船巡航寻找敌舰，小型舰进入主炮射程后会横船环绕炮战，并自动使用主炮和鱼雷交战。
 - 鱼雷会触发舰船规避机动；舰船受损时会冒烟，生命值越低，烟雾出现越频繁。
 - 舰船互相碰撞时会被推开；命中、爆炸、炮弹落海和烟雾均有粒子效果。
 - 舰船有生命条、选中圈、炮塔转向、命中闪光和规避状态显示。
@@ -72,7 +72,11 @@ pnpm lint      # 格式检查和 Oxlint
 - `src/game/camera-focus.ts`：大地图相机跟随、minimap 跳转和屏幕/世界坐标换算。
 - `src/game/utils.ts`：舰船移动、转向、规避等参数 `P`。
 - `src/weapons/spec.ts`：主炮和鱼雷的伤害、射程、速度、冷却等武器参数。
-- `src/ship/index.ts`：舰船 AI、伤害和受损烟雾。
+- `src/ship/index.ts`：舰船状态、武器、伤害和受损烟雾。
+- `src/ship/action/`：行动模式抽象（`ActionMode`）与小型舰环绕炮战实现。
+- `src/ship/locomotion.ts`：行动模式 / 手动指令共用的转向、加减速、地形避让与边界处理。
+- `src/ship/MOVE.md`：舰船移动行为说明（优先级、规避、行动模式、边界与转向疲劳）。
+- `src/ship/evasion.ts`：鱼雷规避行为抽象（当前仍为固定横向机动，后续重做）。
 - `src/game/render.ts`、`src/ship/render-visual.ts`：Babylon.js 场景同步和舰船视觉资源。
 - `src/expanse/`：海域状态、海面渲染和海洋着色器。
 - `src/playground/`：HUD、海域、武器和舰船测试页面。
@@ -84,7 +88,7 @@ src/
   App.tsx           路由与页面导航
   components/       共用 UI（Hud、Minimap、Model、BattleCanvas 等）
   game/             对局逻辑（Game、碰撞、粒子、渲染、选中）
-  ship/             舰船 AI、伤害、视觉资源
+  ship/             舰船行动模式、规避、伤害、视觉资源
   weapons/          武器参数与弹道
   expanse/          海域状态与海面渲染
   playground/       各功能测试页面
