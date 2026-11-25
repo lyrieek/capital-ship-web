@@ -4,18 +4,27 @@ import { AdvancedDynamicTexture, Button, Control, Grid, Rectangle, StackPanel, T
 import { useTranslation } from "react-i18next";
 import { registerGuiLayer, unregisterGuiLayer } from "../babylon/gui";
 import { popUiBlocker, pushUiBlocker } from "../game/ui-state";
-import type { ShipBattleRecord } from "../game/BattleRecord";
+import type { DeathInfo, ShipBattleRecord } from "../game/BattleRecord";
+import { computeScore, rankScores, type ScoreResult } from "../game/Score";
 import { MAP_TEAM_COLORS } from "../map/types";
 
 const FONT_FAMILY = "system-ui, sans-serif";
-const PANEL_WIDTH = 780;
-const HEADER_ROW_HEIGHT = 34;
-const ROW_HEIGHT = 32;
-const PANEL_PADDING = 24;
+const PANEL_WIDTH = 950;
+const HEADER_ROW_HEIGHT = 40;
+const ROW_HEIGHT = 38;
 const TABLE_PADDING = 10;
 
+const HEADER_FONT_SIZE = 15;
+const TABLE_FONT_SIZE = 16;
+const SHIP_FONT_SIZE = 18;
+
+// 死因句子需要把「舰名」单独染成阵营色，用占位符切开模板
+const SHIP_TOKEN = "\uE000";
+const DEATH_TEXT_COLOR = "rgba(226,242,255,0.82)";
+const DEATH_FONT_SIZE = 15;
+
 type TextAlign = "left" | "center" | "right";
-type Translate = (key: string) => string;
+type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
@@ -24,11 +33,96 @@ function formatDuration(seconds: number): string {
   return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
-function displayShipName(row: ShipBattleRecord, t: Translate): string {
-  const key = row.nameKey;
-  if (!key) return row.name;
-  const label = t(key);
-  return label && label !== key ? label : row.name;
+function shipLabel(name: string, nameKey: string | undefined, t: Translate): string {
+  if (!nameKey) return name;
+  const label = t(nameKey);
+  return label && label !== nameKey ? label : name;
+}
+
+function makeShipCell(name: string, row: ShipBattleRecord, scoreResult: ScoreResult, t: Translate): Control {
+  const panel = new StackPanel(name);
+  panel.isVertical = false;
+  panel.height = "100%";
+  panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  panel.adaptWidthToChildren = true;
+
+  const shipName = shipLabel(row.name, row.nameKey, t);
+  const nameBlock = new TextBlock(`${name}_ship`, shipName);
+  nameBlock.fontFamily = FONT_FAMILY;
+  nameBlock.fontSize = SHIP_FONT_SIZE;
+  nameBlock.fontWeight = "400";
+  nameBlock.color = "#d9ecfa";
+  nameBlock.resizeToFit = true;
+  nameBlock.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_LEFT;
+  nameBlock.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_CENTER;
+  panel.addControl(nameBlock);
+
+  if (scoreResult.label) {
+    const labelContainer = new Rectangle(`${name}_labelContainer`);
+    labelContainer.thickness = 1;
+    labelContainer.color = scoreResult.color;
+    labelContainer.background = "rgba(0,0,0,0)";
+    labelContainer.cornerRadius = 4;
+    labelContainer.adaptWidthToChildren = true;
+    labelContainer.adaptHeightToChildren = true;
+    labelContainer.paddingLeft = "6px";
+    labelContainer.paddingRight = "6px";
+    labelContainer.paddingTop = "2px";
+    labelContainer.paddingBottom = "2px";
+
+    const labelBlock = new TextBlock(`${name}_label`, scoreResult.label);
+    labelBlock.fontFamily = FONT_FAMILY;
+    labelBlock.fontSize = SHIP_FONT_SIZE;
+    labelBlock.fontWeight = "700";
+    labelBlock.fontStyle = "italic";
+    labelBlock.color = scoreResult.color;
+    labelBlock.resizeToFit = true;
+    labelBlock.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_LEFT;
+    labelBlock.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_CENTER;
+
+    labelContainer.addControl(labelBlock);
+    panel.addControl(labelContainer);
+  }
+
+  return panel;
+}
+
+/** 死因句子的一段：纯文本 + 颜色，舰名那一段会单独染色 */
+interface DeathSegment {
+  text: string;
+  color: string;
+  fontWeight: string;
+}
+
+function deathWeaponLabel(death: DeathInfo, t: Translate): string {
+  return t(`deathCause.weapons.${death.weapon}`);
+}
+
+/** 按「敌友 + 远近」取模板，再把舰名占位符拆成单独一段 */
+function makeDeathSegments(death: DeathInfo, shipName: string, t: Translate): DeathSegment[] {
+  if (death.relation === "self") {
+    return [
+      {
+        text: t("deathCause.lines.self", { weapon: deathWeaponLabel(death, t) }),
+        color: DEATH_TEXT_COLOR,
+        fontWeight: "400",
+      },
+    ];
+  }
+
+  const tone = `${death.relation}${death.tone === "far" ? "Far" : "Close"}`;
+  const line = t(`deathCause.lines.${tone}.${death.variant}`, {
+    adjective: t(`deathCause.adjectives.${tone}`),
+    relation: t(`deathCause.relations.${death.relation}`),
+    weapon: deathWeaponLabel(death, t),
+    ship: SHIP_TOKEN,
+  });
+  const [before, after = ""] = line.split(SHIP_TOKEN);
+  return [
+    { text: before, color: DEATH_TEXT_COLOR, fontWeight: "400" },
+    { text: shipName, color: MAP_TEAM_COLORS[death.killerTeam], fontWeight: "700" },
+    { text: after, color: DEATH_TEXT_COLOR, fontWeight: "400" },
+  ].filter((segment) => segment.text.length > 0);
 }
 
 function makeText(name: string, text: string, color: string, fontSize: number, fontWeight: string): TextBlock {
@@ -59,6 +153,34 @@ function makeCell(name: string, text: string, color: string, fontSize: number, f
   return cell;
 }
 
+/** 死因单元格：横向拼接多段文字，让舰名保持阵营色 */
+function makeDeathCell(name: string, row: ShipBattleRecord, t: Translate): Control {
+  if (!row.death) {
+    return makeCell(name, t("deathCause.unknown"), DEATH_TEXT_COLOR, DEATH_FONT_SIZE, "400", "left");
+  }
+
+  const panel = new StackPanel(name);
+  panel.isVertical = false;
+  panel.height = "100%";
+  panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  panel.adaptWidthToChildren = true;
+
+  const shipName = shipLabel(row.death.killerName, row.death.killerNameKey, t);
+  makeDeathSegments(row.death, shipName, t).forEach((segment, index) => {
+    const block = new TextBlock(`${name}_part${index}`, segment.text);
+    block.fontFamily = FONT_FAMILY;
+    block.fontSize = DEATH_FONT_SIZE;
+    block.fontWeight = segment.fontWeight;
+    block.color = segment.color;
+    block.resizeToFit = true;
+    block.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_LEFT;
+    block.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_CENTER;
+    panel.addControl(block);
+  });
+
+  return panel;
+}
+
 function makeRestartButton(name: string, label: string): { button: Button; labelBlock: TextBlock } {
   const button = new Button(name);
   button.width = "156px";
@@ -80,13 +202,13 @@ function makeRestartButton(name: string, label: string): { button: Button; label
   return { button, labelBlock };
 }
 
-function createResultsGrid(results: readonly ShipBattleRecord[], t: Translate): Grid {
+function createResultsGrid(results: readonly ShipBattleRecord[], t: Translate, scoreResults: readonly ScoreResult[]): Grid {
   const grid = new Grid("battleResultGrid");
   grid.width = "100%";
   grid.height = `${HEADER_ROW_HEIGHT + results.length * ROW_HEIGHT}px`;
 
-  // 阵营 / 舰船 / 存活时间 / 杀敌数 / 死亡原因
-  for (const weight of [0.8, 1.9, 1.1, 0.7, 1.8]) {
+  // 阵营 / 舰船 / 存活时间 / 杀敌数 / 积分 / 死亡原因
+  for (const weight of [0.8, 1.2, 1.0, 0.7, 0.8, 3.0]) {
     grid.addColumnDefinition(weight);
   }
   grid.addRowDefinition(HEADER_ROW_HEIGHT, true);
@@ -99,27 +221,37 @@ function createResultsGrid(results: readonly ShipBattleRecord[], t: Translate): 
     t("battleRecord.ship"),
     t("battleRecord.survival"),
     t("battleRecord.kills"),
+    t("battleRecord.score"),
     t("battleRecord.deathReason"),
   ];
   headers.forEach((text, column) => {
-    grid.addControl(makeCell(`battleResultHeader_${column}`, text, "rgba(154,196,224,0.78)", 13, "600"), 0, column);
+    grid.addControl(makeCell(`battleResultHeader_${column}`, text, "rgba(154,196,224,0.78)", HEADER_FONT_SIZE, "600"), 0, column);
   });
 
   results.forEach((row, index) => {
     const rowIndex = index + 1;
     const teamColor = MAP_TEAM_COLORS[row.team];
     const team = t(row.team === "red" ? "battleRecord.teams.red" : "battleRecord.teams.blue");
-    const outcome = row.alive ? t("battleRecord.alive") : t(`battleRecord.death.${row.deathReason ?? "unknown"}`);
-    const cells: [string, string, TextAlign][] = [
-      [team, teamColor, "center"],
-      [displayShipName(row, t), "#d9ecfa", "left"],
-      [formatDuration(row.survivalTime), "#d9ecfa", "center"],
-      [String(row.kills), row.kills > 0 ? "#fbbf24" : "#d9ecfa", "center"],
-      [outcome, row.alive ? "#86efac" : "rgba(226,242,255,0.82)", "left"],
+    const scoreResult = scoreResults[index];
+    const cells: [string, string, TextAlign, number][] = [
+      [team, teamColor, "center", TABLE_FONT_SIZE],
+      [shipLabel(row.name, row.nameKey, t), "#d9ecfa", "left", SHIP_FONT_SIZE],
+      [formatDuration(row.survivalTime), "#d9ecfa", "center", TABLE_FONT_SIZE],
+      [String(row.kills), row.kills > 0 ? "#fbbf24" : "#d9ecfa", "center", TABLE_FONT_SIZE],
+      [String(scoreResult.score), scoreResult.color, "center", TABLE_FONT_SIZE + 1],
     ];
-    cells.forEach(([text, color, align], column) => {
-      grid.addControl(makeCell(`battleResultCell_${index}_${column}`, text, color, 14, "400", align), rowIndex, column);
+    cells.forEach(([text, color, align, fontSize], column) => {
+      grid.addControl(makeCell(`battleResultCell_${index}_${column}`, text, color, fontSize, "400", align), rowIndex, column);
     });
+    // 舰船名单元格：用 StackPanel 支持名 + MVP/SVP 标记分色
+    grid.addControl(makeShipCell(`battleResultCell_${index}_1`, row, scoreResult, t), rowIndex, 1);
+    grid.addControl(
+      row.alive
+        ? makeCell(`battleResultCell_${index}_5`, t("battleRecord.alive"), "#86efac", TABLE_FONT_SIZE, "400", "left")
+        : makeDeathCell(`battleResultCell_${index}_5`, row, t),
+      rowIndex,
+      5,
+    );
   });
 
   return grid;
@@ -131,6 +263,7 @@ export interface BattleResultProps {
   title: string;
   titleColor?: string;
   subtitle?: string;
+  winnerTeam: "red" | "blue" | null;
   results: readonly ShipBattleRecord[];
   onRestart: () => void;
 }
@@ -139,7 +272,16 @@ export interface BattleResultProps {
  * 战斗结算面板：使用 Babylon GUI 原生控件（全屏 ADT + Grid / StackPanel / Button），
  * 与游戏内 HUD、弹窗保持同一套视觉语言。
  */
-export default function BattleResult({ scene, open, title, titleColor = "#e6f2fb", subtitle = "", results, onRestart }: BattleResultProps) {
+export default function BattleResult({
+  scene,
+  open,
+  title,
+  titleColor = "#e6f2fb",
+  subtitle = "",
+  winnerTeam,
+  results,
+  onRestart,
+}: BattleResultProps) {
   const { t } = useTranslation();
   const id = useId();
   const latestRef = useRef({ onRestart });
@@ -149,6 +291,8 @@ export default function BattleResult({ scene, open, title, titleColor = "#e6f2fb
   const subtitleRef = useRef<TextBlock | null>(null);
   const tableHostRef = useRef<Rectangle | null>(null);
   const restartLabelRef = useRef<TextBlock | null>(null);
+  // 空表格只报一次错，避免面板重绘时刷屏
+  const emptyTableLoggedRef = useRef(false);
 
   useEffect(() => {
     latestRef.current = { onRestart };
@@ -183,7 +327,7 @@ export default function BattleResult({ scene, open, title, titleColor = "#e6f2fb
     panel.background = "rgba(7,20,34,0.96)";
     panel.shadowBlur = 24;
     panel.shadowColor = "rgba(0,0,0,0.55)";
-    panel.setPadding(`${PANEL_PADDING}px`, "28px", "20px", "28px");
+    panel.setPadding("32px", "36px", "32px", "36px");
     panel.adaptHeightToChildren = true;
     panel.isVisible = false;
     root.addControl(panel);
@@ -250,7 +394,15 @@ export default function BattleResult({ scene, open, title, titleColor = "#e6f2fb
 
     backdrop.isVisible = open;
     panel.isVisible = open;
-    if (!open) return;
+    if (!open) {
+      emptyTableLoggedRef.current = false;
+      return;
+    }
+
+    if (results.length === 0 && !emptyTableLoggedRef.current) {
+      emptyTableLoggedRef.current = true;
+      console.error("[BattleResult] 战斗结束但没有任何舰船记录，结算表格为空", { title, subtitle });
+    }
 
     if (titleRef.current) {
       titleRef.current.text = title;
@@ -259,10 +411,28 @@ export default function BattleResult({ scene, open, title, titleColor = "#e6f2fb
     if (subtitleRef.current) subtitleRef.current.text = subtitle;
     if (restartLabelRef.current) restartLabelRef.current.text = t("battleRecord.restart");
 
+    const scoreInputs = results.map((row) => ({
+      kills: row.kills,
+      shellHitsDealt: row.shellHitsDealt,
+      torpHitsDealt: row.torpHitsDealt,
+      shellHitsTaken: row.shellHitsTaken,
+      torpHitsTaken: row.torpHitsTaken,
+      damageDealt: row.damageDealt,
+      damageTaken: row.damageTaken,
+      survivalTime: row.survivalTime,
+      alive: row.alive,
+      deathSpeedFactor: row.deathSpeedFactor,
+      friendlyFireHits: row.friendlyFireHits,
+      friendlyFireDamage: row.friendlyFireDamage,
+      won: row.team === winnerTeam,
+    }));
+    const scores = scoreInputs.map((input) => computeScore(input));
+    const scoreResults = rankScores(scores);
+
     tableHost.clearControls();
     tableHost.height = `${HEADER_ROW_HEIGHT + results.length * ROW_HEIGHT + TABLE_PADDING * 2}px`;
-    tableHost.addControl(createResultsGrid(results, t));
-  }, [scene, open, title, titleColor, subtitle, results, t]);
+    tableHost.addControl(createResultsGrid(results, t, scoreResults));
+  }, [scene, open, title, titleColor, subtitle, winnerTeam, results, t]);
 
   return null;
 }

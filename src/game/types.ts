@@ -32,9 +32,9 @@ export interface GameState {
 
   /**
    * 发射主炮
-   * @param ship: 发射舰船, target: 目标舰船
+   * @param ship: 发射舰船, target: 目标舰船, from: 炮口所在舰体位置（缺省船心）
    */
-  fireShell(ship: Ship, target: Ship): void;
+  fireShell(ship: Ship, target: Ship, from?: { x: number; y: number }): void;
 
   /**
    * 向世界坐标点发射一发鱼雷
@@ -44,9 +44,9 @@ export interface GameState {
 
   /**
    * 向世界坐标点开火主炮
-   * @param ship: 发射舰船, x: 目标点 X, y: 目标点 Y
+   * @param ship: 发射舰船, x: 目标点 X, y: 目标点 Y, from: 炮口所在舰体位置（缺省船心）
    */
-  fireShellAt(ship: Ship, x: number, y: number): void;
+  fireShellAt(ship: Ship, x: number, y: number, from?: { x: number; y: number }): void;
 
   /**
    * 命令选中舰船向世界坐标点齐射（默认对准鼠标位置）

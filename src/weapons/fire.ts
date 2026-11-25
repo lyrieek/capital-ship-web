@@ -87,6 +87,8 @@ function createProjectile(spec: WeaponSpec, owner: ProjectileOwner, from: Point,
     owner,
     x: from.x,
     y: from.y,
+    // 记录开火瞬间到瞄准点的距离：命中时两船可能已经贴脸，用发射距离才能反映「从多远打来的」
+    shotDistance: Math.hypot(aim.x - owner.x, aim.y - owner.y),
     vx: tangent.x / duration,
     vy: tangent.y / duration,
     r: spec.radius,

@@ -49,18 +49,57 @@
     "ship": "Ship",
     "survival": "Survival",
     "kills": "Kills",
-    "deathReason": "Fate",
+    "deathReason": "Cause of Death",
     "alive": "Survived",
     "restart": "Restart",
     "teams": {
       "red": "Red",
       "blue": "Blue"
-    },
-    "death": {
-      "shell": "Sunk by main gun",
-      "torp": "Sunk by torpedo",
-      "unknown": "Sunk"
     }
+  },
+  "deathCause": {
+    "adjectives": {
+      "enemyFar": "cunning",
+      "enemyClose": "ferocious",
+      "friendlyFar": "foolish",
+      "friendlyClose": "reckless"
+    },
+    "relations": {
+      "enemy": "enemy",
+      "friendly": "friendly"
+    },
+    "weapons": {
+      "shell": "main gun",
+      "torp": "torpedo"
+    },
+    "lines": {
+      "enemyFar": [
+        "Sunk by {{adjective}} enemy {{ship}}'s {{weapon}}",
+        "Lost to {{adjective}} enemy {{ship}}'s {{weapon}}",
+        "Killed at long range by {{adjective}} enemy {{ship}}",
+        "Blown apart by {{adjective}} enemy {{ship}}"
+      ],
+      "enemyClose": [
+        "Sunk by {{adjective}} enemy {{ship}}'s {{weapon}}",
+        "Lost to {{adjective}} enemy {{ship}}'s {{weapon}}",
+        "Killed point-blank by {{adjective}} enemy {{ship}}",
+        "Torn apart by {{adjective}} enemy {{ship}}"
+      ],
+      "friendlyFar": [
+        "Sunk by {{adjective}} friendly {{ship}}'s {{weapon}}",
+        "Killed by {{adjective}} friendly {{ship}}'s {{weapon}}",
+        "Lost to friendly fire from {{adjective}} {{ship}}",
+        "Sunk by friendly fire from {{adjective}} {{ship}}"
+      ],
+      "friendlyClose": [
+        "Sunk by {{adjective}} friendly {{ship}}'s {{weapon}}",
+        "Killed by {{adjective}} friendly {{ship}}'s {{weapon}}",
+        "Sunk point-blank by {{adjective}} friendly {{ship}}",
+        "Blown apart by {{adjective}} friendly {{ship}}"
+      ],
+      "self": "Sunk by its own {{weapon}}"
+    },
+    "unknown": "Sunk"
   },
   "playground": {
     "controls": "Controls",
@@ -106,6 +145,11 @@
   "ship": {
     "title": "Ship Debug",
     "hint": "Click a ship to select it (hold Shift for multi-select), right-click to let the selection sail there, press F to attack.",
+    "classHint": "Each team has one torpedo boat and one frigate: the torpedo boat is smaller with two guns; the frigate is larger with three guns and the same torpedo loadout.",
+    "class": {
+      "torpedoBoat": "Torpedo Boat",
+      "frigate": "Frigate"
+    },
     "clearSelection": "Clear selection",
     "selected": "Selected ships",
     "shipSize": "Scale",
@@ -142,7 +186,11 @@
       "red1": "Red-1",
       "red2": "Red-2",
       "blue1": "Blue-1",
-      "blue2": "Blue-2"
+      "blue2": "Blue-2",
+      "redTb": "Red Torpedo Boat",
+      "redFf": "Red Frigate",
+      "blueTb": "Blue Torpedo Boat",
+      "blueFf": "Blue Frigate"
     },
     "state": {
       "dodge": "Dodge",

@@ -56,6 +56,8 @@ export interface Projectile {
   dmg: number;
   /** 剩余生命时间 */
   life: number;
+  /** 发射瞬间发射者到瞄准点的距离（结算死因时用来判定远近） */
+  shotDistance: number;
   /** 轨迹点坐标列表 [x1,y1,x2,y2,...] */
   trail: number[];
   /** 是否已标记为删除 */

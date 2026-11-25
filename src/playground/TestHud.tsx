@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import Hud from "../components/Hud";
 import Model from "../components/Model";
 import { createBabylonScene } from "../babylon";
+import { usePlaygroundViewport } from "./viewport";
 import "./playground.css";
 
 // HUD 测试中心：仅渲染 HUD 组件本身，配合 input/checkbox 改变状态，
@@ -11,6 +12,8 @@ import "./playground.css";
 export default function TestHud() {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLElement>(null);
+  const viewport = usePlaygroundViewport(previewRef);
   const engineRef = useRef<Engine | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
   const [sceneVersion, setSceneVersion] = useState(0);
@@ -20,14 +23,15 @@ export default function TestHud() {
   const [allow2x, setAllow2x] = useState(true);
 
   useEffect(() => {
+    if (!viewport) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const babylon = createBabylonScene({
       canvas,
       clearColor: [0.04, 0.17, 0.27, 1],
-      width: 1600,
-      height: 900,
+      width: viewport.width,
+      height: viewport.height,
     });
     engineRef.current = babylon.engine;
     const thisScene = babylon.scene;
@@ -42,10 +46,11 @@ export default function TestHud() {
 
     return () => {
       babylon.dispose();
+      engineRef.current = null;
       setScene(null);
       setSceneVersion(0);
     };
-  }, []);
+  }, [viewport]);
 
   return (
     <div className="playground">
@@ -85,8 +90,8 @@ export default function TestHud() {
             {t("playground.allow2x")}
           </label>
         </section>
-        <section className="playground-preview">
-          <canvas ref={canvasRef} className="playground-canvas" width={1600} height={900} />
+        <section className="playground-preview" ref={previewRef}>
+          <canvas ref={canvasRef} className="playground-canvas" />
           {scene ? <Hud key={sceneVersion} scene={scene} allow2x={allow2x} /> : null}
           <Model
             scene={scene}

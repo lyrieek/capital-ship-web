@@ -2,17 +2,10 @@
 import type { Projectile } from "../weapons";
 import type { ActionMode } from "./action/ActionMode";
 import type { EvasionBehavior } from "./evasion";
+// 舰种参数表：尺寸 / 血量 / 炮塔布局 / 鱼雷齐射数量
+import type { ShipClassId } from "./ship-class";
 
-/** 舰种：小型舰 / 大型舰。大型舰行为尚未实现，当前仅预留类型。 */
-export type ShipKind = "small" | "capital";
-
-/**
- * 大型舰能力占位：后续在这里扩展「可停船炮战 / 更慢转向 / 更远射界」等特性。
- * TODO(大型舰): 大型舰可以停船开炮（speedFactor 可到 0），小型舰最低 0.7。
- */
-export interface CapitalShipTraits {
-  canHalt?: boolean;
-}
+export type { ShipClassId } from "./ship-class";
 
 // 右键下达的航行目标（世界像素坐标）
 export interface SailOrder {
@@ -38,8 +31,8 @@ export interface TorpedoVolley {
 }
 
 export interface ShipConfig {
-  // 舰种；缺省为小型舰
-  kind?: ShipKind;
+  // 舰种；缺省为鱼雷艇
+  shipClass?: ShipClassId;
   // X坐标，可选；未设置时由 RestrictArea 自动摆船分配
   x?: number;
   // Y坐标，可选；未设置时由 RestrictArea 自动摆船分配
@@ -58,7 +51,7 @@ export interface ShipConfig {
   team: "red" | "blue";
   // 基准Y坐标（用于规避和回正），可选，缺省等于 y
   baseY?: number;
-  // 巡航速度系数（相对 P.moveSpeed）；缺省使用 P.normalFactor
+  // 巡航速度系数（相对 P.moveSpeed）；缺省使用舰种参数
   cruiseFactor?: number;
   // 行动模式速度倍率下限 / 上限；缺省 0.7 / 1.6
   speedMin?: number;
@@ -67,7 +60,7 @@ export interface ShipConfig {
   accelRate?: number;
   // 规避行为；缺省使用 DefaultEvasionBehavior，可按舰船类型替换
   evasionBehavior?: EvasionBehavior;
-  // 行动模式；缺省按舰种创建，小型舰为 SmallShipAction
+  // 行动模式；缺省按舰种创建，目前鱼雷艇 / 护卫舰都使用 SmallShipAction
   actionMode?: ActionMode;
 }
 
@@ -77,7 +70,12 @@ export interface Ship extends ShipConfig {
   // Y坐标
   y: number;
   // 舰种
-  kind: ShipKind;
+  shipClass: ShipClassId;
+  // 火炮数量（等于炮塔布局中的炮塔数）
+  gunCount: number;
+  // 鱼雷单轮齐射数量下限 / 上限（由舰种决定）
+  torpedoSalvoMin: number;
+  torpedoSalvoMax: number;
   // 航向方向：1-右，-1-左
   dir: 1 | -1;
   // 最小X坐标（左边界），由 RestrictArea 统一设置，缺省 -Infinity
@@ -151,8 +149,10 @@ export interface Ship extends ShipConfig {
   torpVolley: TorpedoVolley | null;
   // 被击闪白效果
   hitFlash: number;
-  // 后坐力效果
+  // 后坐力效果（鱼雷 / 手动演示等整船级效果）
   recoil: number;
+  // 每门炮自己的后坐力（0~1），逐门开火时只让开火的那门炮后坐
+  turretRecoil: number[];
   // 主炮当前瞄准角度（朝向目标，平滑转向）
   aimAngle: number;
   // 手动指定的射击点：炮管先转向该点，对准后才开火；null 表示没有手动指令

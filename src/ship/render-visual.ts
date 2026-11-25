@@ -1,10 +1,11 @@
 // 舰船可视对象的创建：主游戏与 playground 共用同一套，避免重复实现。
 // 选择/输入由 game/selection.ts 的 bindPointerInput 统一处理；此处只负责 Mesh / 贴图 / 选中圈的创建。
 import { Color3, DynamicTexture, MeshBuilder, TransformNode, type LinesMesh, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
-import { MAIN_TURRET_BARREL, MAIN_TURRET_RADIUS, mainTurretOffset, paintHull, rearTurretOffset, REAR_TURRET_SCALE } from "../game/textures";
+import { MAIN_TURRET_BARREL, MAIN_TURRET_RADIUS, paintHull } from "../game/textures";
 import { createSelectionRing, type SelectionRing } from "../game/selection";
 import { createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
 import { paintCannonTurret } from "../weapons";
+import { getShipClassSpec } from "./ship-class";
 import type { ShipHud, ShipHudLayer } from "./hud";
 import type { Ship } from "./ship";
 
@@ -32,6 +33,10 @@ const NAV_LINE_ALPHA = 0.6;
 export interface TurretVisual {
   pivot: TransformNode;
   mesh: Mesh;
+  /** 相对主炮塔的缩放，后坐位移也按它换算 */
+  scale: number;
+  /** 非交战状态下炮管相对舰体的停靠角度 */
+  restAngle: number;
 }
 
 // 每艘舰船对应的可视对象
@@ -42,15 +47,23 @@ export interface ShipVisual {
   hud: ShipHud;
   ring: SelectionRing;
   line: LinesMesh | null;
-  mainTurret: TurretVisual;
-  rearTurret: TurretVisual;
+  turrets: TurretVisual[];
   turretMaterial: StandardMaterial;
   turretTexture: DynamicTexture;
   shipSize: number;
 }
 
 // 创建一门炮塔：pivot 挂在舰体上负责转向，plane 挂在 pivot 上负责显示
-function createTurret(name: string, hull: Mesh, scene: Scene, x: number, scale: number, size: number, material: StandardMaterial): TurretVisual {
+function createTurret(
+  name: string,
+  hull: Mesh,
+  scene: Scene,
+  x: number,
+  scale: number,
+  size: number,
+  material: StandardMaterial,
+  restAngle = 0,
+): TurretVisual {
   const plane = createPlane(`turret_${name}`, size, size, scene, RG_SHIP);
   plane.material = material;
   plane.alphaIndex = TURRET_ALPHA_INDEX;
@@ -58,10 +71,11 @@ function createTurret(name: string, hull: Mesh, scene: Scene, x: number, scale: 
   const pivot = new TransformNode(`turretPivot_${name}`, scene);
   pivot.parent = hull;
   pivot.position.x = x;
+  pivot.rotation.z = restAngle;
   plane.parent = pivot;
   plane.scaling.setAll(scale);
 
-  return { pivot, mesh: plane };
+  return { pivot, mesh: plane, scale, restAngle };
 }
 
 /**
@@ -120,18 +134,19 @@ export function createShipVisual(ship: Ship, scene: Scene, hudLayer: ShipHudLaye
   // createSpriteMaterial 已统一禁用深度写入，炮塔与舰体同层时靠 alphaIndex 排序即可
   const turretMaterial = createSpriteMaterial(`shipTurretMaterial_${ship.name}`, turretTexture, scene);
 
-  const mainTurret = createTurret(`${ship.name}_main`, mesh, scene, mainTurretOffset(ship.len) * shipSize, 1, turretWorldSize, turretMaterial);
-  const rearTurret = createTurret(
-    `${ship.name}_rear`,
-    mesh,
-    scene,
-    rearTurretOffset(ship.len) * shipSize,
-    REAR_TURRET_SCALE,
-    turretWorldSize,
-    turretMaterial,
-  );
-  mainTurret.pivot.rotation.z = -(ship.aimAngle - ship.angle);
-  rearTurret.pivot.rotation.z = Math.PI;
+  const turrets = getShipClassSpec(ship.shipClass).turrets.map((mount, index) => {
+    const restAngle = mount.facing === "aft" ? Math.PI : 0;
+    return createTurret(
+      `${ship.name}_${index}`,
+      mesh,
+      scene,
+      mount.offsetRatio * ship.len * shipSize,
+      mount.scale,
+      turretWorldSize,
+      turretMaterial,
+      restAngle,
+    );
+  });
 
   return {
     mesh,
@@ -140,25 +155,30 @@ export function createShipVisual(ship: Ship, scene: Scene, hudLayer: ShipHudLaye
     hud,
     ring,
     line: null,
-    mainTurret,
-    rearTurret,
+    turrets,
     turretMaterial,
     turretTexture,
     shipSize,
   };
 }
 
-// 每帧同步炮塔：主炮跟随瞄准角，尾部炮固定朝后，开火时沿炮管方向后坐
+// 每帧同步炮塔：交战时所有炮塔跟随瞄准角，非交战时回到各自的停靠朝向；开火时沿炮管方向后坐
 export function syncShipTurrets(visual: ShipVisual, ship: Ship): void {
-  visual.mainTurret.pivot.rotation.z = -(ship.aimAngle - ship.angle);
-  visual.mainTurret.mesh.position.x = -ship.recoil * TURRET_KICK * visual.shipSize;
-  visual.rearTurret.mesh.position.x = -ship.recoil * 0.5 * TURRET_KICK * visual.shipSize;
+  const aiming = ship.aimOrder !== null || ship.target?.alive === true;
+  const aimRotation = -(ship.aimAngle - ship.angle);
+  for (let i = 0; i < visual.turrets.length; i++) {
+    const turret = visual.turrets[i];
+    turret.pivot.rotation.z = aiming ? aimRotation : turret.restAngle;
+    // 逐门开火时只有当前炮塔后坐；整船 recoil 仍用于鱼雷 / 手动演示
+    const kick = Math.max(ship.recoil, ship.turretRecoil[i] ?? 0);
+    turret.mesh.position.x = -kick * TURRET_KICK * turret.scale * visual.shipSize;
+  }
 }
 
-// 释放炮塔：pivot.dispose() 会连同子 Mesh 一起销毁，材质/贴图为两门炮共用，只释放一次
+// 释放炮塔：pivot.dispose() 会连同子 Mesh 一起销毁，材质/贴图为所有炮塔共用，只释放一次
 export function disposeShipTurrets(visual: ShipVisual): void {
-  visual.mainTurret.pivot.dispose();
-  visual.rearTurret.pivot.dispose();
+  for (const turret of visual.turrets) turret.pivot.dispose();
+  visual.turrets.length = 0;
   visual.turretMaterial.dispose();
   visual.turretTexture.dispose();
 }

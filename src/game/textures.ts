@@ -12,20 +12,6 @@ export const SHIP_BOW = 26;
 export const MAIN_TURRET_RADIUS = 9;
 export const MAIN_TURRET_BARREL = 21;
 
-// 尾部主炮比舰首炮小一圈：渲染时复用主炮贴图并整体缩放
-export const REAR_TURRET_RADIUS = 6.5;
-export const REAR_TURRET_SCALE = REAR_TURRET_RADIUS / MAIN_TURRET_RADIUS;
-
-/** 主炮在舰体本地坐标里的 X 偏移（正向为舰首） */
-export function mainTurretOffset(shipLength: number): number {
-  return shipLength / 2 - SHIP_BOW - MAIN_TURRET_RADIUS * 0.6;
-}
-
-/** 尾部主炮在舰体本地坐标里的 X 偏移 */
-export function rearTurretOffset(shipLength: number): number {
-  return -shipLength / 2 + SHIP_BOW + REAR_TURRET_RADIUS * 0.7;
-}
-
 /**
  * 绘制舰体贴图（不含炮塔）。
  * 炮塔是可转动的零件，单独画在自己的贴图上并作为子 Mesh 跟随舰体，

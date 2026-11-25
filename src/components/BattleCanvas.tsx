@@ -254,6 +254,7 @@ function BattleStage({ map, onChangeMap }: BattleStageProps) {
           title={winnerText}
           titleColor={winnerTeam === "red" ? "#ff7b6b" : winnerTeam === "blue" ? "#7cc4ff" : "#cfe3f5"}
           subtitle={subtitle}
+          winnerTeam={winnerTeam}
           results={results}
           onRestart={handleRestart}
         />

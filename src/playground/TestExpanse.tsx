@@ -11,6 +11,7 @@ import {
   type CameraEffect,
 } from "../babylon";
 import { createOceanSurface, DEFAULT_LIGHT_AZIMUTH, DEFAULT_LIGHT_ELEVATION, OCEAN_PRESETS, type OceanKind, type OceanSurface } from "../expanse";
+import { usePlaygroundViewport, type PlaygroundViewport } from "./viewport";
 import "./playground.css";
 import "./TestExpanse.css";
 
@@ -80,6 +81,7 @@ interface OceanScene {
 // 建场景、铺海面、跑渲染循环
 function createOceanScene(
   canvas: HTMLCanvasElement,
+  viewport: PlaygroundViewport,
   segments: number,
   look: OceanLook,
   pausedRef: RefObject<boolean>,
@@ -90,18 +92,19 @@ function createOceanScene(
   const babylon = createBabylonScene({
     canvas,
     clearColor: [0.02, 0.06, 0.1, 1],
-    width: 1600,
-    height: 900,
+    width: viewport.width,
+    height: viewport.height,
   });
   const scene = babylon.scene;
 
   const surface = createOceanSurface({
     scene,
     kind: look.kind,
-    worldWidth: 1600,
-    worldHeight: 900,
+    worldWidth: viewport.width,
+    worldHeight: viewport.height,
+    viewHeight: viewport.height,
     segmentsX: segments,
-    segmentsY: Math.round((segments * 900) / 1600),
+    segmentsY: Math.max(24, Math.round((segments * viewport.height) / viewport.width)),
   });
   applyLook(surface, look);
 
@@ -384,6 +387,8 @@ function ExpanseControls({ state, actions }: { state: ExpanseState; actions: Exp
 // 便于在不启动游戏对战的情况下单独调试海浪表现。
 export default function TestExpanse() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLElement>(null);
+  const viewport = usePlaygroundViewport(previewRef);
   const surfaceRef = useRef<OceanSurface | null>(null);
   // 渲染循环里的可变参数走 ref，避免每次改动都重建 Babylon 场景
   const lookRef = useRef<OceanLook>(mergeLook(DEFAULT_LOOK, {}));
@@ -400,17 +405,18 @@ export default function TestExpanse() {
   const [cameraEffectState, setCameraEffectState] = useState<CameraEffect>(getCameraEffect());
 
   useEffect(() => {
+    if (!viewport) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ocean = createOceanScene(canvas, segments, lookRef.current, pausedRef, scaleRef, timeRef, setFps);
+    const ocean = createOceanScene(canvas, viewport, segments, lookRef.current, pausedRef, scaleRef, timeRef, setFps);
     surfaceRef.current = ocean.surface;
 
     return () => {
       ocean.dispose();
       surfaceRef.current = null;
     };
-  }, [segments]);
+  }, [segments, viewport]);
 
   const replaceLook = (next: OceanLook) => {
     lookRef.current = next;
@@ -479,8 +485,8 @@ export default function TestExpanse() {
             onReset: reset,
           }}
         />
-        <section className="playground-preview">
-          <canvas ref={canvasRef} className="playground-canvas" width={1600} height={900} />
+        <section className="playground-preview" ref={previewRef}>
+          <canvas ref={canvasRef} className="playground-canvas" />
         </section>
       </div>
     </div>

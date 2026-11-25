@@ -49,18 +49,58 @@
     "ship": "舰船",
     "survival": "存活时间",
     "kills": "杀敌数",
+    "score": "积分",
     "deathReason": "死亡原因",
     "alive": "存活",
     "restart": "重新开始",
     "teams": {
       "red": "红方",
       "blue": "蓝方"
-    },
-    "death": {
-      "shell": "主炮击沉",
-      "torp": "鱼雷击沉",
-      "unknown": "沉没"
     }
+  },
+  "deathCause": {
+    "adjectives": {
+      "enemyFar": "狡诈的",
+      "enemyClose": "凶狠的",
+      "friendlyFar": "愚蠢的",
+      "friendlyClose": "鲁莽的"
+    },
+    "relations": {
+      "enemy": "敌舰",
+      "friendly": "友舰"
+    },
+    "weapons": {
+      "shell": "主炮",
+      "torp": "鱼雷"
+    },
+    "lines": {
+      "enemyFar": [
+        "被{{adjective}}{{relation}}{{ship}}用{{weapon}}击沉",
+        "死于{{adjective}}{{relation}}{{ship}}的{{weapon}}之下",
+        "遭{{adjective}}{{relation}}{{ship}}远距离{{weapon}}攻击，沉入海底",
+        "在{{adjective}}{{relation}}{{ship}}的远程{{weapon}}打击下倾覆"
+      ],
+      "enemyClose": [
+        "被{{adjective}}{{relation}}{{ship}}用{{weapon}}击沉",
+        "死于{{adjective}}{{relation}}{{ship}}的{{weapon}}之下",
+        "被{{adjective}}{{relation}}{{ship}}贴身{{weapon}}齐射，当场沉没",
+        "在{{adjective}}{{relation}}{{ship}}的{{weapon}}直击下断成两截"
+      ],
+      "friendlyFar": [
+        "被{{adjective}}{{relation}}{{ship}}的{{weapon}}击沉",
+        "因{{adjective}}{{relation}}{{ship}}的{{weapon}}而死",
+        "遭{{adjective}}{{relation}}{{ship}}误击，含冤沉没",
+        "在{{adjective}}{{relation}}{{ship}}的远程{{weapon}}误伤下沉没"
+      ],
+      "friendlyClose": [
+        "被{{adjective}}{{relation}}{{ship}}的{{weapon}}击沉",
+        "因{{adjective}}{{relation}}{{ship}}的{{weapon}}而死",
+        "被{{adjective}}{{relation}}{{ship}}贴脸误射，当场沉没",
+        "在{{adjective}}{{relation}}{{ship}}的{{weapon}}误击中倾覆"
+      ],
+      "self": "被自己的{{weapon}}误伤，自沉"
+    },
+    "unknown": "沉没"
   },
   "playground": {
     "controls": "控制面板",
@@ -106,6 +146,11 @@
   "ship": {
     "title": "舰船测试",
     "hint": "左键点击舰船进行选择（按住 Shift 可多选），右键让选中舰船转向航行过去，按 F 键攻击最近的敌舰。",
+    "classHint": "红蓝双方各有一艘鱼雷艇和一艘护卫舰：鱼雷艇较小、两门炮；护卫舰更大，三门炮，鱼雷数量相同。",
+    "class": {
+      "torpedoBoat": "鱼雷艇",
+      "frigate": "护卫舰"
+    },
     "clearSelection": "清除选择",
     "selected": "选中舰船",
     "shipSize": "缩放比例",
@@ -142,7 +187,11 @@
       "red1": "红-1",
       "red2": "红-2",
       "blue1": "蓝-1",
-      "blue2": "蓝-2"
+      "blue2": "蓝-2",
+      "redTb": "红-鱼雷艇",
+      "redFf": "红-护卫舰",
+      "blueTb": "蓝-鱼雷艇",
+      "blueFf": "蓝-护卫舰"
     },
     "state": {
       "dodge": "规避",

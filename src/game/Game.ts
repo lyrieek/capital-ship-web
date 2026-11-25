@@ -107,11 +107,11 @@ export function initializeGame(map: GameMap): GameState {
       this.record.reset(this.ships, this.time);
     },
 
-    fireShell(ship: Ship, target: Ship) {
+    fireShell(ship: Ship, target: Ship, from?: { x: number; y: number }) {
       const spec = getWeaponSpec("shell");
-      const from = { x: ship.x, y: ship.y };
-      const aim = predictAim(from, target, spec.speed);
-      const projectiles = fireWeapon("shell", ship, from, aim, {
+      const origin = from ?? { x: ship.x, y: ship.y };
+      const aim = predictAim(origin, target, spec.speed);
+      const projectiles = fireWeapon("shell", ship, origin, aim, {
         bounds: { width: W, height: H, margin: 20 },
         onMuzzle: (point) => emitBurst(point.x, point.y, spec.muzzleParticles, spec.muzzleColor),
       });
@@ -134,13 +134,13 @@ export function initializeGame(map: GameMap): GameState {
     },
 
     // 向世界坐标点开火主炮（不预测目标，直取给定点）
-    fireShellAt(ship: Ship, x: number, y: number) {
+    fireShellAt(ship: Ship, x: number, y: number, from?: { x: number; y: number }) {
       const spec = getWeaponSpec("shell");
-      const from = { x: ship.x, y: ship.y };
+      const origin = from ?? { x: ship.x, y: ship.y };
       const projectiles = fireWeapon(
         "shell",
         ship,
-        from,
+        origin,
         { x, y },
         {
           bounds: { width: W, height: H, margin: 20 },
@@ -181,10 +181,14 @@ export function initializeGame(map: GameMap): GameState {
         onHit: (projectile, target, x, y) => {
           // 弹药的 owner 就是发射舰船，用对象身份反查，避免再给弹药加一层索引
           const killer = this.ships.find((ship) => ship === projectile.owner) ?? null;
+          // 只在目标尚存活时记录命中与伤害，避免沉船后的残余弹药重复计分
+          if (target.hp > 0) {
+            this.record.recordHit(killer, target as Ship, projectile.type, projectile.dmg);
+          }
           target.takeDamage(projectile.dmg);
           if (target.hp <= 0) {
             // target 一定来自 this.ships；ProjectileTarget 只是更新器需要的最小接口
-            this.record.recordKill(killer, target as Ship, projectile.type, this.time);
+            this.record.recordKill(killer, target as Ship, projectile.type, projectile.shotDistance, this.time);
           }
           const spec = getWeaponSpec(projectile.type);
           emitBurst(x, y, spec.impactParticles, spec.impactColor);

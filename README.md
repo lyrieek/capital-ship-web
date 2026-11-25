@@ -45,7 +45,7 @@
 - `/hud`：HUD 预览与测试。
 - `/expanse`：海域外观测试及海域类型切换。
 - `/weapons`：武器参数与弹道测试。
-- `/ship`：舰船行为和外观测试。
+- `/ship`：舰船行为和外观测试（鱼雷艇 / 护卫舰对比）。
 
 ## 技术栈
 
@@ -72,7 +72,7 @@ pnpm lint      # 格式检查和 Oxlint
 - `src/game/camera-focus.ts`：大地图相机跟随、minimap 跳转和屏幕/世界坐标换算。
 - `src/game/utils.ts`：舰船移动、转向、规避等参数 `P`。
 - `src/weapons/spec.ts`：主炮和鱼雷的伤害、射程、速度、冷却等武器参数。
-- `src/ship/index.ts`：舰船状态、武器、伤害和受损烟雾。
+- `src/ship/index.ts`：舰船模块出口；`src/ship/ship-class.ts`：鱼雷艇 / 护卫舰的舰种参数表；`src/ship/classes/`：具体舰种类。
 - `src/ship/action/`：行动模式抽象（`ActionMode`）与小型舰环绕炮战实现。
 - `src/ship/locomotion.ts`：行动模式 / 手动指令共用的转向、加减速、地形避让与边界处理。
 - `src/ship/MOVE.md`：舰船移动行为说明（优先级、规避、行动模式、边界与转向疲劳）。

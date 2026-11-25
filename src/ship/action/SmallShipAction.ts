@@ -188,8 +188,3 @@ export class SmallShipAction extends ActionMode {
     return { heading: ship.dir > 0 ? 0 : Math.PI, speedFactor: 1 };
   }
 }
-
-// 大型舰占位说明：
-// TODO(大型舰): 大型舰行动模式（可停船炮战、更慢转向、更远射界）尚未实现。
-// 现在 createDefaultActionMode("capital") 也暂时复用本模式；
-// 舰种类型与 CapitalShipTraits 已在 ship.d.ts 预留。
