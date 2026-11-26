@@ -3,6 +3,7 @@ import type { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Button, Control, Grid, Rectangle, StackPanel, TextBlock } from "@babylonjs/gui";
 import { useTranslation } from "react-i18next";
 import { registerGuiLayer, unregisterGuiLayer } from "../babylon/gui";
+import { getGameInstance } from "../game/Game";
 import { popUiBlocker, pushUiBlocker } from "../game/ui-state";
 import type { DeathInfo, ShipBattleRecord } from "../game/BattleRecord";
 import { computeScore, rankScores, type ScoreResult } from "../game/Score";
@@ -44,6 +45,27 @@ function shipLabel(name: string, nameKey: string | undefined, t: Translate): str
   if (!nameKey) return name;
   const label = t(nameKey);
   return label && label !== nameKey ? label : name;
+}
+
+// 空表 / 记录被清空时输出到控制台的现场信息：
+// 区分「对局实例没了」和「对局还在但记录条目为空」，方便定位是哪条链路把数据弄丢。
+function battleDiagnostics(results: readonly ShipBattleRecord[], cached: readonly ShipBattleRecord[], scene: Scene | null): Record<string, unknown> {
+  const game = getGameInstance();
+  return {
+    liveResults: results.length,
+    cachedResults: cached.length,
+    sceneReady: Boolean(scene),
+    hasGameInstance: Boolean(game),
+    gameOver: game?.over ?? null,
+    gameTime: game ? Math.round(game.time * 100) / 100 : null,
+    winnerTeam: game?.winnerTeam ?? null,
+    endTimer: game?.endTimer ?? null,
+    shipCount: game?.ships.length ?? null,
+    aliveShips: game ? game.ships.filter((ship) => ship.alive).length : null,
+    recordEntries: game?.record.size ?? null,
+    projectileCount: game?.projectiles.length ?? null,
+    ships: game?.ships.map((ship) => ({ name: ship.name, team: ship.team, hp: ship.hp })),
+  };
 }
 
 function makeShipCell(name: string, row: ShipBattleRecord, scoreResult: ScoreResult, t: Translate): Control {
@@ -216,7 +238,7 @@ function toggleSort(sort: SortState, column: number): SortState {
 }
 
 function sortIndicator(sort: SortState, column: number): string {
-  if (sort.kind === "default") return column === 4 ? "▼" : "";
+  if (sort.kind === "default") return column === 5 ? "▼" : "";
   return sort.column === column ? (sort.kind === "asc" ? "▲" : "▼") : "";
 }
 
@@ -235,9 +257,12 @@ function compareByColumn(a: RowWithScore, b: RowWithScore, column: number): numb
       return a.row.kills - b.row.kills;
     }
     case 4: {
-      return a.score.score - b.score.score;
+      return a.row.damageDealt - b.row.damageDealt;
     }
     case 5: {
+      return a.score.score - b.score.score;
+    }
+    case 6: {
       return (b.row.alive ? 1 : 0) - (a.row.alive ? 1 : 0) || (a.row.death?.killerName ?? "").localeCompare(b.row.death?.killerName ?? "");
     }
     default: {
@@ -304,8 +329,8 @@ function createResultsGrid(
   grid.width = "100%";
   grid.height = `${HEADER_ROW_HEIGHT + sortedResults.length * ROW_HEIGHT}px`;
 
-  // 阵营 / 舰船 / 存活时间 / 杀敌数 / 积分 / 死亡原因
-  for (const weight of [0.8, 1.2, 1.0, 0.7, 0.8, 3.0]) {
+  // 阵营 / 舰船 / 存活时间 / 杀敌数 / 伤害 / 积分 / 死亡原因
+  for (const weight of [0.8, 1.2, 1.0, 0.7, 0.9, 0.8, 3.0]) {
     grid.addColumnDefinition(weight);
   }
   grid.addRowDefinition(HEADER_ROW_HEIGHT, true);
@@ -318,16 +343,17 @@ function createResultsGrid(
     t("battleRecord.ship"),
     t("battleRecord.survival"),
     t("battleRecord.kills"),
+    t("battleRecord.damage"),
     t("battleRecord.score"),
     t("battleRecord.deathReason"),
   ];
   headers.forEach((text, column) => {
     // 舰船 / 死亡原因两列正文左对齐，表头跟随
-    const align: TextAlign = column === 1 || column === 5 ? "left" : "center";
+    const align: TextAlign = column === 1 || column === 6 ? "left" : "center";
     const indicator = sortIndicator(sort, column);
     const label = indicator ? `${text} ${indicator}` : text;
     const isSorted = (sort.kind === "asc" || sort.kind === "desc") && sort.column === column;
-    const fontWeight = isSorted || (sort.kind === "default" && column === 4) ? "700" : "600";
+    const fontWeight = isSorted || (sort.kind === "default" && column === 5) ? "700" : "600";
     grid.addControl(
       makeSortableHeaderCell(`battleResultHeader_${column}`, label, "rgba(154,196,224,0.78)", HEADER_FONT_SIZE, fontWeight, align, () =>
         onHeaderClick(column),
@@ -347,6 +373,7 @@ function createResultsGrid(
       [shipLabel(row.name, row.nameKey, t), "#d9ecfa", "left", SHIP_FONT_SIZE],
       [formatDuration(row.survivalTime), "#d9ecfa", "center", TABLE_FONT_SIZE],
       [String(row.kills), row.kills > 0 ? "#fbbf24" : "#d9ecfa", "center", TABLE_FONT_SIZE],
+      [String(Math.round(row.damageDealt)), row.damageDealt > 0 ? "#fbbf24" : "#d9ecfa", "center", TABLE_FONT_SIZE],
       [String(scoreResult.score), scoreResult.color, "center", TABLE_FONT_SIZE + 1],
     ];
     cells.forEach(([text, color, align, fontSize], column) => {
@@ -356,14 +383,52 @@ function createResultsGrid(
     grid.addControl(makeShipCell(`battleResultCell_${index}_1`, row, scoreResult, t), rowIndex, 1);
     grid.addControl(
       row.alive
-        ? makeCell(`battleResultCell_${index}_5`, t("battleRecord.alive"), "#86efac", TABLE_FONT_SIZE, "400", "left")
-        : makeDeathCell(`battleResultCell_${index}_5`, row, t),
+        ? makeCell(`battleResultCell_${index}_6`, t("battleRecord.alive"), "#86efac", TABLE_FONT_SIZE, "400", "left")
+        : makeDeathCell(`battleResultCell_${index}_6`, row, t),
       rowIndex,
-      5,
+      6,
     );
   });
 
   return grid;
+}
+
+// 用一份冻结的记录快照重建表格主体（积分、排序、行高都在这里算）
+function fillResultsTable(
+  tableHost: Rectangle,
+  results: readonly ShipBattleRecord[],
+  t: Translate,
+  winnerTeam: "red" | "blue" | null,
+  sort: SortState,
+  onHeaderClick: (column: number) => void,
+): void {
+  const scores = results.map((row) =>
+    computeScore({
+      kills: row.kills,
+      shellHitsDealt: row.shellHitsDealt,
+      torpHitsDealt: row.torpHitsDealt,
+      shellHitsTaken: row.shellHitsTaken,
+      torpHitsTaken: row.torpHitsTaken,
+      damageDealt: row.damageDealt,
+      damageTaken: row.damageTaken,
+      survivalTime: row.survivalTime,
+      alive: row.alive,
+      deathSpeedFactor: row.deathSpeedFactor,
+      friendlyFireHits: row.friendlyFireHits,
+      friendlyFireDamage: row.friendlyFireDamage,
+      won: row.team === winnerTeam,
+    }),
+  );
+  // MVP = 胜利方最高分，SVP = 失败方最高分；不能只按全场名次取第二
+  const scoreResults = rankScores(
+    scores,
+    results.map((row) => row.team),
+    winnerTeam,
+  );
+
+  tableHost.clearControls();
+  tableHost.height = `${HEADER_ROW_HEIGHT + results.length * ROW_HEIGHT + TABLE_PADDING * 2}px`;
+  tableHost.addControl(createResultsGrid(results, t, scoreResults, sort, onHeaderClick));
 }
 
 export interface BattleResultProps {
@@ -404,6 +469,9 @@ export default function BattleResult({
   const restartLabelRef = useRef<TextBlock | null>(null);
   // 空表格只报一次错，避免面板重绘时刷屏
   const emptyTableLoggedRef = useRef(false);
+  // 已成功渲染的记录快照：外部数据意外被清空时用它兜底，表格不会突然消失
+  const renderedResultsRef = useRef<readonly ShipBattleRecord[]>([]);
+  const clearedResultsLoggedRef = useRef(false);
 
   useEffect(() => {
     latestRef.current = { onRestart };
@@ -507,14 +575,37 @@ export default function BattleResult({
     panel.isVisible = open;
     if (!open) {
       emptyTableLoggedRef.current = false;
+      clearedResultsLoggedRef.current = false;
+      renderedResultsRef.current = [];
       return;
     }
 
-    if (results.length === 0 && !emptyTableLoggedRef.current) {
+    // 正常情况下 results 是战斗结束瞬间冻结的快照。
+    // 若上游数据因对局实例被清理等原因变成空数组，保留最后一次成功渲染的记录，
+    // 避免已经显示出来的表格突然变空（记录“过一会自动消失”）。
+    const visibleResults = results.length > 0 ? results : renderedResultsRef.current;
+    if (results.length === 0 && visibleResults.length > 0 && !clearedResultsLoggedRef.current) {
+      clearedResultsLoggedRef.current = true;
+      // oxlint-disable-next-line no-console
+      console.warn("[BattleResult] 结算数据被置空，已保留上一次快照", {
+        title,
+        subtitle,
+        sort,
+        ...battleDiagnostics(results, visibleResults, scene),
+      });
+    }
+    if (visibleResults.length === 0 && !emptyTableLoggedRef.current) {
       emptyTableLoggedRef.current = true;
       // oxlint-disable-next-line no-console
-      console.error("[BattleResult] 战斗结束但没有任何舰船记录，结算表格为空", { title, subtitle });
+      console.error("[BattleResult] 战斗结束但没有任何舰船记录，结算表格为空", {
+        title,
+        subtitle,
+        winnerTeam,
+        sort,
+        ...battleDiagnostics(results, visibleResults, scene),
+      });
     }
+    if (visibleResults.length > 0) renderedResultsRef.current = visibleResults;
 
     if (titleRef.current) {
       titleRef.current.text = title;
@@ -523,27 +614,7 @@ export default function BattleResult({
     if (subtitleRef.current) subtitleRef.current.text = subtitle;
     if (restartLabelRef.current) restartLabelRef.current.text = t("battleRecord.restart");
 
-    const scoreInputs = results.map((row) => ({
-      kills: row.kills,
-      shellHitsDealt: row.shellHitsDealt,
-      torpHitsDealt: row.torpHitsDealt,
-      shellHitsTaken: row.shellHitsTaken,
-      torpHitsTaken: row.torpHitsTaken,
-      damageDealt: row.damageDealt,
-      damageTaken: row.damageTaken,
-      survivalTime: row.survivalTime,
-      alive: row.alive,
-      deathSpeedFactor: row.deathSpeedFactor,
-      friendlyFireHits: row.friendlyFireHits,
-      friendlyFireDamage: row.friendlyFireDamage,
-      won: row.team === winnerTeam,
-    }));
-    const scores = scoreInputs.map((input) => computeScore(input));
-    const scoreResults = rankScores(scores);
-
-    tableHost.clearControls();
-    tableHost.height = `${HEADER_ROW_HEIGHT + results.length * ROW_HEIGHT + TABLE_PADDING * 2}px`;
-    tableHost.addControl(createResultsGrid(results, t, scoreResults, sort, onHeaderClick));
+    fillResultsTable(tableHost, visibleResults, t, winnerTeam, sort, onHeaderClick);
   }, [scene, open, title, titleColor, subtitle, winnerTeam, results, t, sort]);
 
   return null;

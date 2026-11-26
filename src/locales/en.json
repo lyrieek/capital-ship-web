@@ -71,6 +71,8 @@
     "ship": "Ship",
     "survival": "Survival",
     "kills": "Kills",
+    "damage": "Damage",
+    "score": "Score",
     "deathReason": "Cause of Death",
     "alive": "Survived",
     "restart": "Restart",

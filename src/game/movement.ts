@@ -1,8 +1,8 @@
 // 右键航行指令：先转向目标点，再沿航向行驶，到达后恢复行动模式。
-import type { Ship } from "../ship/ship";
+import type { Ship, ShipMotionTarget } from "../ship/ship";
 import { shipBounds } from "../ship/bounds";
 import { clamp } from "./utils";
-import { driveShip, resetDriveMemory } from "../ship/locomotion";
+import { resetDriveMemory, steerToHeading } from "../ship/locomotion";
 
 // 进入这个距离后视为到达目标点
 export const ARRIVE_RADIUS = 6;
@@ -37,7 +37,7 @@ export function issueSelectionSail(ships: readonly Ship[], x: number, y: number)
  * 推进航行指令
  * @returns true 表示这一帧由指令接管了移动
  */
-export function updateSailOrder(ship: Ship, dt: number): boolean {
+export function updateSailOrder(ship: ShipMotionTarget, dt: number): boolean {
   const order = ship.order;
   if (!order) return false;
 
@@ -45,17 +45,15 @@ export function updateSailOrder(ship: Ship, dt: number): boolean {
   const dy = order.y - ship.y;
   const distance = Math.hypot(dx, dy);
   if (distance <= ARRIVE_RADIUS) {
-    ship.x = order.x;
-    ship.y = order.y;
     ship.order = null;
     ship.baseY = ship.y;
-    ship.vx = 0;
-    ship.vy = 0;
+    // 路点是导航意图，不是瞬移目标：停在到达半径内的当前位置，不吸附到任意 XY。
+    ship.stopMotion();
     return true;
   }
 
   // 统一运动层：转向、地形预避让、边界 clamp 都在 driveShip 里处理；
   // alignSpeed 保留手动航行「航向偏差大时慢一点」的旧手感。
-  driveShip(ship, Math.atan2(dy, dx), 1, dt, { alignSpeed: true, bounce: false });
+  steerToHeading(ship, Math.atan2(dy, dx), 1, dt, { alignSpeed: true, bounce: false });
   return true;
 }

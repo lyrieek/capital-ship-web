@@ -49,11 +49,13 @@ const TOO_CLOSE_FACTOR = 0.55;
 export type SmallShipPhase = "search" | "approach" | "engage" | "loop";
 
 export class SmallShipAction extends ActionMode {
-  readonly name = "small-ship";
+  readonly name: string = "small-ship";
 
-  private phase: SmallShipPhase = "search";
-  private orbitSide: 1 | -1 = 1;
-  private loopT = 0;
+  protected phase: SmallShipPhase = "search";
+  protected orbitSide: 1 | -1 = 1;
+  protected loopT = 0;
+  /** 环绕半径相对舰长的比例；子类可据此调整绕行圈大小 */
+  protected orbitRadiusPerLen = ORBIT_RADIUS_PER_LEN;
 
   reset(): void {
     super.reset();
@@ -70,7 +72,7 @@ export class SmallShipAction extends ActionMode {
 
     const distance = Math.hypot(target.x - ship.x, target.y - ship.y);
     const bearing = Math.atan2(target.y - ship.y, target.x - ship.x);
-    const orbitRadius = SmallShipAction.orbitRadius(ship);
+    const orbitRadius = this.orbitRadius(ship);
     const engageRange = SHELL_RANGE * ENGAGE_RANGE_FACTOR;
 
     this.updatePhase(ship, distance, bearing, orbitRadius, engageRange, dt);
@@ -94,15 +96,24 @@ export class SmallShipAction extends ActionMode {
   }
 
   /** 目标锁定：活着就继续追，死了或不存在才重新找最近的敌人 */
-  private acquireTarget(ship: Ship): void {
+  protected acquireTarget(ship: Ship): void {
     if (this.target?.alive) return;
 
+    const previous = this.target;
     const next = ship.findTarget();
     if (next !== this.target) {
       this.phase = "search";
       this.loopT = 0;
     }
     this.target = next;
+    // 只在目标真正发生变化时通知子类，避免每帧重复判定
+    if (next !== previous) this.onTargetChanged(ship);
+  }
+
+  /** 目标发生变化时的钩子；例如护卫舰借此决定是否「观望」新目标 */
+  // oxlint-disable-next-line class-methods-use-this
+  protected onTargetChanged(_ship: Ship): void {
+    // 默认不响应
   }
 
   private updatePhase(ship: Ship, distance: number, bearing: number, orbitRadius: number, engageRange: number, dt: number): void {
@@ -140,9 +151,9 @@ export class SmallShipAction extends ActionMode {
     }
   }
 
-  /** 环绕半径按自身长度比例，并给一个下限 */
-  private static orbitRadius(ship: Ship): number {
-    return Math.max(MIN_ORBIT_RADIUS, ship.len * ORBIT_RADIUS_PER_LEN);
+  /** 环绕半径按自身长度比例，并给一个下限；子类可覆盖（如护卫舰保持更远交战距离） */
+  protected orbitRadius(ship: Ship): number {
+    return Math.max(MIN_ORBIT_RADIUS, ship.len * this.orbitRadiusPerLen);
   }
 
   /** 横船航向：切线方向 + 距离误差修正 */
@@ -150,7 +161,7 @@ export class SmallShipAction extends ActionMode {
     return SmallShipAction.orbitHeadingForSide(bearing, distance, orbitRadius, this.orbitSide);
   }
 
-  private static orbitHeadingForSide(bearing: number, distance: number, orbitRadius: number, side: 1 | -1): number {
+  protected static orbitHeadingForSide(bearing: number, distance: number, orbitRadius: number, side: 1 | -1): number {
     const radialError = clamp((distance - orbitRadius) / Math.max(1, orbitRadius), -1, 1);
     return bearing + side * (Math.PI / 2 - radialError * MAX_INWARD_CORRECTION);
   }
@@ -182,7 +193,7 @@ export class SmallShipAction extends ActionMode {
     this.orbitSide = bestSide;
   }
 
-  private static searchIntent(ship: Ship): ActionIntent {
+  protected static searchIntent(ship: Ship): ActionIntent {
     ship.target = null;
     // 没有目标时沿当前方向巡航；撞边界后 driveShip 会更新 dir
     return { heading: ship.dir > 0 ? 0 : Math.PI, speedFactor: 1 };

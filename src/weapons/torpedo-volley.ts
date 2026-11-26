@@ -3,7 +3,9 @@
 // 规则：
 //   1. 目标横船（船体大致垂直于我方视线）时按完整 3~5 枚齐射；
 //      目标船头/船尾对着我方时只打最少 3 枚，避免把鱼雷浪费在很窄的投影上。
-//   2. 鱼雷航线附近有友舰时不发射，避免误伤（炮弹跨射越过友舰不在此限）。
+//   2. 鱼雷航线近处（TORPEDO_NEAR_FRIENDLY_DISTANCE）有友舰时不发射，避免开局就误伤；
+//      更远的友舰会收到鱼雷预警自行规避，不再拖累发射舰的判断。
+//      主炮炮弹的同类检查在 ShipImpl 开火前用 friendly-fire 的同一套逻辑完成。
 //   3. 航线被岛屿/礁石挡住时不发射，鱼雷会撞地形，打不中目标。
 //
 // 这里只做「能不能打 / 打几枚」的纯计算，不创建弹药；
@@ -11,6 +13,7 @@
 import { angleDiff } from "../game/utils";
 import type { TerrainField } from "../terrain";
 import { muzzlePoint, predictAim, rollSalvo } from "./fire";
+import { isFriendlyFireRisk, TORPEDO_NEAR_FRIENDLY_DISTANCE } from "./friendly-fire";
 import { getWeaponSpec, type WeaponSpec } from "./spec";
 
 /** 目标不是横船时也至少打这么多枚 */
@@ -86,36 +89,6 @@ function isPathBlockedByTerrain(
 }
 
 /**
- * 估算友舰与鱼雷航线的最近距离。
- * 鱼雷很慢，友舰在飞行途中也会移动，所以先按「鱼雷到达最近点的时间」
- * 预测友舰位置，再迭代一次，避免只拿当前坐标误判。
- */
-function closestApproachToFriend(
-  from: { x: number; y: number },
-  dx: number,
-  dy: number,
-  speed: number,
-  maxTime: number,
-  friend: TorpedoVolleyShip,
-): number {
-  // 初始估计：友舰当前位置在航线上的投影
-  let t = Math.max(0, (friend.x - from.x) * dx + (friend.y - from.y) * dy) / speed;
-  for (let i = 0; i < 2; i++) {
-    const px = friend.x + friend.vx * t;
-    const py = friend.y + friend.vy * t;
-    t = Math.max(0, (px - from.x) * dx + (py - from.y) * dy) / speed;
-  }
-  // 超出鱼雷寿命的友舰不可能被这轮鱼雷打到
-  if (t > maxTime) return Infinity;
-
-  const px = friend.x + friend.vx * t;
-  const py = friend.y + friend.vy * t;
-  const tx = from.x + dx * speed * t;
-  const ty = from.y + dy * speed * t;
-  return Math.hypot(px - tx, py - ty);
-}
-
-/**
  * 规划一轮鱼雷齐射。
  * @returns 可以发射时返回齐射数量；风险太高（友舰 / 地形）时返回 null
  */
@@ -139,13 +112,23 @@ export function planTorpedoVolley(params: TorpedoVolleyParams): TorpedoVolleyPla
   // 1) 地形遮挡：鱼雷是直线航行，中间隔一座岛就必然打不中
   if (field && isPathBlockedByTerrain(field, muzzle, dirX, dirY, distance + spec.radius, spec.radius)) return null;
 
-  // 2) 友舰误伤：鱼雷会继续飞完整射程，友舰可能在任何一段航线上
-  const maxTime = spec.range / spec.speed;
-  for (const friend of ships) {
-    if (!friend.alive || friend === shooter || friend.team !== shooter.team) continue;
-    const clearance = Math.hypot(friend.len, friend.wid) / 2 + spec.radius + FRIENDLY_SAFETY_MARGIN;
-    if (closestApproachToFriend(muzzle, dirX, dirY, spec.speed, maxTime, friend) < clearance) return null;
-  }
+  // 2) 友舰误伤：只看近处航线，远处的友舰会在鱼雷接近时自行规避
+  const checkDistance = Math.min(spec.range, TORPEDO_NEAR_FRIENDLY_DISTANCE);
+  const pathEnd = { x: muzzle.x + dirX * checkDistance, y: muzzle.y + dirY * checkDistance };
+  const friendlyRisk = isFriendlyFireRisk({
+    shooter,
+    ships,
+    from: muzzle,
+    to: pathEnd,
+    speed: spec.speed,
+    projectileRadius: spec.radius,
+    safetyMargin: FRIENDLY_SAFETY_MARGIN,
+    spread: spec.scatter,
+    spreadDistance: distance,
+    // 只对近处航线负责：更远的友舰会收到鱼雷预警自行规避
+    ignoreBeyondPath: true,
+  });
+  if (friendlyRisk) return null;
 
   // 3) 横船才值得打满齐射；否则只打最低数量，节省鱼雷
   const salvo = isBroadside(shooter, target) ? Math.max(TORPEDO_MIN_SALVO, rollSalvo(spec, random)) : TORPEDO_MIN_SALVO;

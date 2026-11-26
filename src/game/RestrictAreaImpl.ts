@@ -339,8 +339,8 @@ export class RestrictAreaImpl extends RestrictArea {
       if (!spot) {
         throw new Error(`[RestrictArea] 队伍 "${this.team}" 在限制区内找不到不被地物占用的空位（尝试 ${SPAWN_TRIES} 次）`);
       }
-      if (cfg.x === undefined) ship.x = spot.x;
-      if (cfg.y === undefined) ship.y = spot.y;
+      // 这是唯一的出生摆放阶段；构造配置已给出 x/y 时不允许重新摆放。
+      ship.placeAtSpawn(cfg.x ?? spot.x, cfg.y ?? spot.y);
     }
     if (cfg.dir === undefined) {
       ship.dir = this.team === "red" ? 1 : -1;

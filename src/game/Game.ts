@@ -1,7 +1,7 @@
 // 主游戏状态：地图、限制区、舰船、弹药与胜负判定。
 import type { GameState } from "./types";
 import { emitBurst, emitSmoke, emitSplash } from "./fx";
-import type { Ship } from "../ship/ship";
+import type { Ship, ShipMotionTarget } from "../ship/ship";
 import { clearParticles, renderGame } from "./render";
 import { resolveCollisions as resolveShipCollisions } from "./collision";
 import { H, W } from "./utils";
@@ -10,7 +10,15 @@ import type { GameMap } from "../map";
 import type { FleetShips } from "./fleet";
 import { BattleRecord } from "./BattleRecord";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
-import { clampToBounds, fireWeapon, fireWeaponShot, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
+import {
+  clampToBounds,
+  fireWeapon,
+  fireWeaponShot,
+  getWeaponSpec,
+  predictAim,
+  SHELL_ARC_CLEARANCE,
+  updateProjectiles as updateWeaponProjectiles,
+} from "../weapons";
 // 地物（岛屿 / 礁石 / 建筑）的数据与查询已抽离到 src/terrain
 import { createTerrainItems, getTerrainField, setTerrainField, TerrainField } from "../terrain";
 
@@ -204,7 +212,8 @@ export function initializeGame(map: GameMap, fleets?: FleetShips): GameState {
     },
 
     resolveCollisions() {
-      resolveShipCollisions(this.ships, getTerrainField());
+      // Game 创建的运行时实例均为 ShipImpl；只在物理求解边界提升为可修正位置的能力类型。
+      resolveShipCollisions(this.ships as unknown as ShipMotionTarget[], getTerrainField());
     },
 
     updateProjectiles(dt: number) {
@@ -229,6 +238,18 @@ export function initializeGame(map: GameMap, fleets?: FleetShips): GameState {
           }
           const spec = getWeaponSpec(projectile.type);
           emitBurst(x, y, spec.impactParticles, spec.impactColor);
+        },
+        // 主炮是曲射火力：远距离射击时，出膛后近处那段弹道已从友舰上方越过，
+        // 不判定命中近处友舰；目标本身就在近处时炮弹来不及爬升，仍可误伤。
+        // 鱼雷不考虑距离，碰到任何友舰都算误击。
+        canHit: (projectile, target) => {
+          if (projectile.kind !== "cannon") return true;
+          if (projectile.shotDistance <= SHELL_ARC_CLEARANCE) return true;
+          const owner = this.ships.find((ship) => ship === projectile.owner);
+          if (!owner || owner.team !== (target as Ship).team) return true;
+          // 弹道起点是炮口，用与出膛点的距离判断是否已经爬升到安全高度
+          const traveled = Math.hypot(projectile.x - projectile.arc.curve.x0, projectile.y - projectile.arc.curve.y0);
+          return traveled >= SHELL_ARC_CLEARANCE;
         },
         onTerrainHit: (projectile, x, y) => {
           // 鱼雷撞上岛礁：爆炸消失，不穿过地形（炮弹不触发，曲射越过岛屿）

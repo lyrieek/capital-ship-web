@@ -3,6 +3,7 @@ export * from "./types";
 export * from "./spec";
 export * from "./trajectory";
 export * from "./fire";
+export * from "./friendly-fire";
 export * from "./torpedo-volley";
 export * from "./update";
 export * from "./texture";

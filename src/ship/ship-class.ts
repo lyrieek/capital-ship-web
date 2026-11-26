@@ -30,6 +30,8 @@ export interface ShipClassSpec {
   maxHp: number;
   /** 巡航速度系数（相对 P.moveSpeed） */
   cruiseFactor: number;
+  /** 主炮冷却倍率：1 = 标准射速，2 = 冷却翻倍（射速 50%） */
+  gunCooldownFactor: number;
   /** 炮塔布局；数量即火炮数量 */
   turrets: readonly ShipTurretSpec[];
   /** 鱼雷单轮齐射数量下限 */
@@ -48,6 +50,8 @@ export const SHIP_CLASS_SPECS: Record<ShipClassId, ShipClassSpec> = {
     wid: 30,
     maxHp: 150,
     cruiseFactor: P.normalFactor,
+    // 鱼雷艇靠雷击爆发，主炮射速只有标准的一半
+    gunCooldownFactor: 2,
     turrets: [
       { offsetRatio: 0.186, scale: 1 },
       { offsetRatio: -0.1945, scale: 0.72, facing: "aft" },
@@ -62,7 +66,10 @@ export const SHIP_CLASS_SPECS: Record<ShipClassId, ShipClassSpec> = {
     len: 150,
     wid: 42,
     maxHp: 360,
-    cruiseFactor: P.normalFactor * 0.9,
+    // 原 0.9，再降低 20% → 0.72；重甲炮台舰更慢
+    cruiseFactor: P.normalFactor * 0.9 * 0.8,
+    // 护卫舰保留标准射速
+    gunCooldownFactor: 1,
     turrets: [
       { offsetRatio: 0.3, scale: 1 },
       { offsetRatio: 0.02, scale: 0.9 },

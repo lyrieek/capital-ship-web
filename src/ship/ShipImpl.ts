@@ -1,20 +1,28 @@
-import type { Ship, ShipConfig, SailOrder, ThreatItem, ShipClassId, TorpedoVolley, Bounds } from "./ship";
+import type { Ship, ShipConfig, SailOrder, ThreatItem, ShipClassId, TorpedoVolley, Bounds, ShipMotionStep, ShipMotionTarget } from "./ship";
 import { shipBounds } from "./bounds";
-import { P, rand, clamp, angleDiff, approachAngle } from "../game/utils";
+import { P, rand, clamp, angleDiff, approachAngle, shipCapsuleClearance } from "../game/utils";
 import { updateSailOrder } from "../game/movement";
 import { getGameInstance } from "../game/Game";
 // 武器参数集中在 src/weapons
-import { getWeaponSpec, planTorpedoVolley, withinRange } from "../weapons";
+import {
+  getWeaponSpec,
+  isFriendlyFireRisk,
+  planTorpedoVolley,
+  predictAim,
+  SHELL_ARC_CLEARANCE,
+  TORPEDO_NEAR_FRIENDLY_DISTANCE,
+  withinRange,
+} from "../weapons";
 // 舰种参数：尺寸 / 血量 / 炮塔布局 / 鱼雷齐射数量
 import { getShipClassSpec } from "./ship-class";
 // 地形场：鱼雷发射前检查航线是否被岛礁挡住
 import { getTerrainField } from "../terrain";
 // 规避行为抽象：不同舰船可替换不同的规避逻辑
-import { DefaultEvasionBehavior, type EvasionBehavior } from "./evasion";
+import { DefaultEvasionBehavior, THREAT_WINDOW, type EvasionBehavior } from "./evasion";
 // 行动模式抽象 + 统一运动执行层
 import { createDefaultActionMode, type ActionMode } from "./action";
-import { driveShip } from "./locomotion";
-export type { Ship, ShipConfig, SailOrder, ThreatItem, ShipClassId, TorpedoVolley, Bounds } from "./ship";
+import { steerToHeading } from "./locomotion";
+export type { Ship, ShipConfig, SailOrder, ThreatItem, ShipClassId, TorpedoVolley, Bounds, SpawnableShip } from "./ship";
 export { createShip, getTeamColors } from "./create-ship";
 export { shipBounds } from "./bounds";
 
@@ -31,11 +39,15 @@ const TORPEDO_RETRY_DELAY = 0.5;
 // 多炮塔齐射时相邻两门炮的开火间隔（秒）：让每门炮依次开火，而不是同一帧全部打出
 const GUN_SALVO_INTERVAL = 0.12;
 
-// 规避时相对前进轴压的舵角：明显的转向（约 68°），既像真实躲雷，也能获得足够的横向脱离速度。
-// 采用「船头对准真实航迹」的方式移动，避免横着平移的僵硬观感。
-const EVASION_TURN = (68 * Math.PI) / 180;
-// 规避航向的横向分量；速度按它补偿，保证按 evasion.ts 算出的横移量能在命中前走完
-const EVASION_LATERAL = Math.sin(EVASION_TURN);
+// 友舰挡在炮弹航线上时，主炮短暂等待而不是把整轮冷却耗掉；等待后重新评估
+const GUN_RETRY_DELAY = 0.4;
+// 主炮弹道检查的安全余量（像素）
+const SHELL_SAFETY_MARGIN = 18;
+// 鱼雷逐发补射前的友舰安全余量（像素）
+const TORPEDO_SAFETY_MARGIN = 24;
+
+// 回正时沿基准航向前视的距离；偏离基准线时将横向误差合成为舵向。
+const RECOVER_LOOK_AHEAD = 240;
 
 // 进行中的多炮塔齐射队列：舰船逐门开火，炮塔各自后坐
 interface GunVolley {
@@ -52,9 +64,13 @@ interface GunVolley {
   target: Ship | null;
 }
 
-export class ShipImpl implements Ship {
-  x: number;
-  y: number;
+export class ShipImpl implements ShipMotionTarget {
+  private positionX: number;
+  private positionY: number;
+  private orientation: number;
+  private velocityX: number;
+  private velocityY: number;
+  private spawnPositionLocked: boolean;
   bounds: Bounds | null;
   dir: 1 | -1;
   hp: number;
@@ -76,6 +92,7 @@ export class ShipImpl implements Ship {
   actionMode: ActionMode;
 
   cruiseFactor: number;
+  gunCooldownFactor: number;
   speedFactor: number;
   speedMin: number;
   speedMax: number;
@@ -84,14 +101,32 @@ export class ShipImpl implements Ship {
   stuckT: number;
 
   baseAngle: number;
-  angle: number;
+  get x(): number {
+    return this.positionX;
+  }
+
+  get y(): number {
+    return this.positionY;
+  }
+
+  get angle(): number {
+    return this.orientation;
+  }
+
+  get vx(): number {
+    return this.velocityX;
+  }
+
+  get vy(): number {
+    return this.velocityY;
+  }
+
   state: "normal" | "dodge" | "recover";
   stateT: number;
   evasionT: number;
   evasionSide: 1 | -1;
-  vx: number;
-  vy: number;
   gunCD: number;
+  gunMode: "all" | "aftOnly";
   torpCD: number;
   torpVolley: TorpedoVolley | null;
   turretRecoil: number[];
@@ -112,8 +147,9 @@ export class ShipImpl implements Ship {
   constructor(cfg: ShipConfig) {
     const spec = getShipClassSpec(cfg.shipClass ?? "torpedoBoat");
 
-    this.x = cfg.x ?? 0;
-    this.y = cfg.y ?? 0;
+    this.positionX = cfg.x ?? 0;
+    this.positionY = cfg.y ?? 0;
+    this.spawnPositionLocked = cfg.x !== undefined && cfg.y !== undefined;
     // 活动边界由 RestrictArea 通过 ship.bounds 绑定；缺省 null 表示不受限制区约束，仅受世界边界约束
     this.bounds = null;
     this.dir = cfg.dir ?? 1;
@@ -136,6 +172,7 @@ export class ShipImpl implements Ship {
     this.actionMode = cfg.actionMode ?? createDefaultActionMode(this.shipClass);
 
     this.cruiseFactor = cfg.cruiseFactor ?? spec.cruiseFactor;
+    this.gunCooldownFactor = cfg.gunCooldownFactor ?? spec.gunCooldownFactor;
     this.speedFactor = 1;
     this.speedMin = cfg.speedMin ?? 0.7;
     this.speedMax = cfg.speedMax ?? 1.6;
@@ -144,17 +181,18 @@ export class ShipImpl implements Ship {
     this.stuckT = 0;
 
     this.baseAngle = this.dir > 0 ? 0 : Math.PI;
-    this.angle = this.baseAngle;
+    this.orientation = this.baseAngle;
 
     this.state = "normal";
     this.stateT = 0;
     this.evasionT = 0;
     this.evasionSide = 1;
 
-    this.vx = 0;
-    this.vy = 0;
+    this.velocityX = 0;
+    this.velocityY = 0;
 
-    this.gunCD = rand(CANNON.initialCooldownMin, CANNON.initialCooldownMax);
+    this.gunCD = rand(CANNON.initialCooldownMin, CANNON.initialCooldownMax) * this.gunCooldownFactor;
+    this.gunMode = "all";
     this.torpCD = rand(TORPEDO.initialCooldownMin, TORPEDO.initialCooldownMax);
     this.torpVolley = null;
     this.turretRecoil = Array.from({ length: this.gunCount }, () => 0);
@@ -169,6 +207,61 @@ export class ShipImpl implements Ship {
     this.evasionSpeedFactor = 0.65;
     this.evasionDuration = 0.85;
     this.evasionAmplitude = 42;
+  }
+
+  /**
+   * 只供出生/场景装配使用的一次性摆放接口。
+   * 构造配置已经同时指定 x/y，或舰船已经开始运动后，再调用都视为错误。
+   */
+  placeAtSpawn(x: number, y: number): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new RangeError(`[Ship] ${this.name} 的出生坐标必须是有限数字`);
+    }
+    if (this.spawnPositionLocked) {
+      throw new Error(`[Ship] ${this.name} 的出生位置已锁定，运行时不能重新摆放`);
+    }
+    this.positionX = x;
+    this.positionY = y;
+    this.spawnPositionLocked = true;
+  }
+
+  /**
+   * 运动层提交一帧积分结果。调用方传位移增量，不传任意目标坐标；
+   * 朝向和速度也在同一处更新，保证位置、速度预判和渲染保持一致。
+   */
+  applyMotionStep(step: ShipMotionStep): void {
+    const values = [step.dx, step.dy, step.dt, step.angle, step.vx, step.vy];
+    if (!values.every((value) => Number.isFinite(value)) || step.dt < 0) {
+      throw new Error(`[Ship] ${this.name} 收到非法运动步长`);
+    }
+    const maxDistance = P.moveSpeed * this.cruiseFactor * this.speedFactor * step.dt;
+    if (Math.hypot(step.dx, step.dy) > maxDistance + 0.05) {
+      throw new Error(`[Ship] ${this.name} 运动步长超过航速上限：${Math.hypot(step.dx, step.dy).toFixed(2)}px > ${maxDistance.toFixed(2)}px`);
+    }
+    this.positionX += step.dx;
+    this.positionY += step.dy;
+    this.orientation = step.angle;
+    this.velocityX = step.vx;
+    this.velocityY = step.vy;
+    this.dir = step.dir;
+    this.spawnPositionLocked = true;
+  }
+
+  /** 碰撞求解器专用：只施加接触位移，不伪装成导航目标。 */
+  applyCollisionCorrection(dx: number, dy: number): void {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+      throw new RangeError(`[Ship] ${this.name} 收到非法碰撞修正`);
+    }
+    this.positionX += dx;
+    this.positionY += dy;
+    this.spawnPositionLocked = true;
+  }
+
+  /** 路点抵达后停止，不吸附到路点坐标。 */
+  stopMotion(): void {
+    this.velocityX = 0;
+    this.velocityY = 0;
+    this.speedFactor = 0;
   }
 
   get alive() {
@@ -213,18 +306,22 @@ export class ShipImpl implements Ship {
 
       // 时间到最近接近点
       const t = -(rx * rvx + ry * rvy) / vv;
-      // 只考虑未来2.2秒内的威胁
-      if (t < 0 || t > 2.2) continue;
+      // 预警时间窗与规避计算共用同一个值
+      if (t < 0 || t > THREAT_WINDOW) continue;
 
       // 最近接近点相对坐标
       const cx = rx + rvx * t,
         cy = ry + rvy * t;
-      // 未击中距离
+      // 未击中距离（船心到鱼雷的最近距离，用于选择最近威胁）
       const miss = Math.hypot(cx, cy);
-      // 鱼雷危险半径
-      const danger = getWeaponSpec(p.type).dangerRadius;
-
-      if (miss < danger && (!best || t < best.t)) best = { t, p, miss };
+      // 用预测时刻的两船位置按舰体胶囊算净空：擦着船头 / 船尾过去的鱼雷也要触发规避
+      const px = p.x + p.vx * t;
+      const py = p.y + p.vy * t;
+      const sx = this.x + this.vx * t;
+      const sy = this.y + this.vy * t;
+      const clearance = shipCapsuleClearance(px, py, { x: sx, y: sy, len: this.len, wid: this.wid, angle: this.angle });
+      // 鱼雷威胁半径（dangeRadius 已包含弹体尺寸和少量余量）
+      if (clearance < getWeaponSpec(p.type).dangerRadius && (!best || t < best.t)) best = { t, p, miss };
     }
     return best;
   }
@@ -269,115 +366,63 @@ export class ShipImpl implements Ship {
     this.updateGunVolley(dt);
 
     // 控制优先级：手动航行指令 > 鱼雷规避 > 行动模式 > 默认巡航
-    if (!updateSailOrder(this, dt)) {
-      if (this.state === "normal") {
-        // 先做安全层检测；有鱼雷威胁时本帧交给规避，下一帧执行规避机动
-        const threat = this.findThreat();
-        if (threat) {
-          this.startEvasion(threat);
-        } else {
-          // 行动模式只输出意图，转向 / 加减速 / 地形避让由 locomotion 统一执行；
-          // useTurnFatigue 让 AI 不要每帧追着小幅航向修正来回摆。
-          const intent = this.actionMode.update(this, dt);
-          driveShip(this, intent.heading, intent.speedFactor, dt, { bounce: true, useTurnFatigue: true });
-          // 规避锚点跟随当前航向和位置，兼容尚未重做的横向规避逻辑
-          this.baseY = this.y;
-          this.baseAngle = this.angle;
-        }
-      } else if (this.state === "dodge") {
-        // 规避状态：向安全一侧压一个明显的舵角，边转向边全速脱离鱼雷航线。
-        // 幅度 / 速度由 EvasionBehavior 自适应给出；船头始终对准真实航迹，
-        // 不再横着平移，看起来像一次真正的急转脱离。
-        const px = this.x;
-        const py = this.y;
-        const bounds = shipBounds(this);
-        const targetY = clamp(this.baseY + this.evasionSide * this.evasionAmplitude, bounds.minY, bounds.maxY);
-        const remainY = targetY - this.y;
-        // 世界坐标航向：X 分量跟随前进方向，Y 分量指向规避侧，两者合成明确的斜向脱离角。
-        // 横移到位后转回水平航向（对应横向模型里的鱼雷航向），保持 Y 不再漂移。
-        const forward = this.dir > 0 ? 0 : Math.PI;
-        const heading = Math.abs(remainY) > 0.5 ? Math.atan2(this.evasionSide * Math.sin(EVASION_TURN), this.dir * Math.cos(EVASION_TURN)) : forward;
-        this.angle = approachAngle(this.angle, heading, P.turnRate * dt);
-
-        // 横向分量只有 sin(EVASION_TURN)，按此补偿总速度，确保实际横移量达到 plan.amplitude
-        const step = (P.moveSpeed * this.evasionSpeedFactor * dt) / EVASION_LATERAL;
-        this.x += Math.cos(this.angle) * step;
-        this.y += Math.sin(this.angle) * step;
-        // 左右越界反弹并更新 dir / baseAngle；上下只做夹取
-        if (this.x < bounds.minX) {
-          this.x = bounds.minX;
-          this.dir = 1;
-          this.baseAngle = 0;
-        } else if (this.x > bounds.maxX) {
-          this.x = bounds.maxX;
-          this.dir = -1;
-          this.baseAngle = Math.PI;
-        }
-        this.y = clamp(this.y, bounds.minY, bounds.maxY);
-
-        this.evasionT += dt;
-        // 规避时间到但鱼雷仍在来袭，继续规避，避免过早回正撞上雷
-        if (this.evasionT >= this.evasionDuration && !this.findThreat()) {
-          this.state = "recover";
-          this.stateT = 0;
-        }
-
-        // 由实际位移反推速度，保证威胁预判读到真实航速
-        if (dt > 0) {
-          this.vx = (this.x - px) / dt;
-          this.vy = (this.y - py) / dt;
-        }
+    const ordered = updateSailOrder(this, dt);
+    if (ordered) {
+      // 玩家手动航行优先：不延续鱼雷艇后撤时的舰尾炮限制
+      this.gunMode = "all";
+    } else if (this.state === "normal") {
+      // 先做安全层检测；有鱼雷威胁时本帧交给规避，下一帧执行规避机动
+      const threat = this.findThreat();
+      if (threat) {
+        this.startEvasion(threat);
       } else {
-        // 回正状态：缓慢转回基准角度并返回基准航线
-        const rotStep = P.turnRate * dt;
-        this.angle = approachAngle(this.angle, this.baseAngle, rotStep);
+        // 行动模式只输出意图，转向 / 加减速 / 地形避让由 locomotion 统一执行；
+        // useTurnFatigue 让 AI 不要每帧追着小幅航向修正来回摆。
+        const intent = this.actionMode.update(this, dt);
+        steerToHeading(this, intent.heading, intent.speedFactor, dt, { bounce: true, useTurnFatigue: true });
+        // 规避锚点跟随当前航向和位置，兼容尚未重做的横向规避逻辑
+        this.baseY = this.y;
+        this.baseAngle = this.angle;
+      }
+    } else if (this.state === "dodge") {
+      // 规避状态只生成舵向意图；实际位移仍由统一运动层完成。
+      const bounds = shipBounds(this);
+      const targetY = clamp(this.baseY + this.evasionSide * this.evasionAmplitude, bounds.minY, bounds.maxY);
+      const remainY = targetY - this.y;
+      const forward = this.dir > 0 ? 0 : Math.PI;
+      const dodgeAngle = (68 * Math.PI) / 180;
+      const heading = Math.abs(remainY) > 0.5 ? Math.atan2(this.evasionSide * Math.sin(dodgeAngle), this.dir * Math.cos(dodgeAngle)) : forward;
+      steerToHeading(this, heading, this.evasionSpeedFactor, dt, { bounce: true });
 
-        const dy = this.baseY - this.y;
-        const step = P.moveSpeed * P.normalFactor * dt;
-        if (Math.abs(dy) <= step) this.y = this.baseY;
-        else this.y += Math.sign(dy) * step;
+      this.evasionT += dt;
+      // 规避时间到但鱼雷仍在来袭，继续规避，避免过早回正撞上雷
+      if (this.evasionT >= this.evasionDuration && !this.findThreat()) {
+        this.state = "recover";
+        this.stateT = 0;
+      }
+    } else {
+      // 回正只表达「沿基准航向继续走，同时收敛回基准线」，不直接改坐标。
+      const laneError = clamp(this.baseY - this.y, -RECOVER_LOOK_AHEAD, RECOVER_LOOK_AHEAD);
+      const forwardX = Math.cos(this.baseAngle) * RECOVER_LOOK_AHEAD;
+      const forwardY = Math.sin(this.baseAngle) * RECOVER_LOOK_AHEAD + laneError;
+      const desiredHeading = Math.atan2(forwardY, forwardX);
+      steerToHeading(this, desiredHeading, 1, dt, { bounce: true });
 
-        // 回正途中若又有鱼雷来袭，重新规避，避免回到基准航线时正好撞上雷
-        const threat = this.findThreat();
-        if (threat) {
-          this.startEvasion(threat);
-        } else {
-          const angDone = Math.abs(angleDiff(this.angle, this.baseAngle)) < 0.02;
-          const posDone = Math.abs(this.y - this.baseY) < 0.5;
-          if (angDone && posDone && this.stateT > 0.35) {
-            this.state = "normal";
-            this.angle = this.baseAngle;
-            this.y = this.baseY;
-          }
+      // 回正途中若又有鱼雷来袭，重新规避，避免回到基准航线时正好撞上雷
+      const threat = this.findThreat();
+      if (threat) {
+        this.startEvasion(threat);
+      } else {
+        const angDone = Math.abs(angleDiff(this.angle, this.baseAngle)) < 0.02;
+        const posDone = Math.abs(this.y - this.baseY) < 0.5;
+        if (angDone && posDone && this.stateT > 0.35) {
+          this.state = "normal";
         }
-
-        const speed = P.moveSpeed * P.normalFactor;
-        this.moveForward(speed * dt);
-        this.vx = this.dir * speed;
-        const remain = this.baseY - this.y;
-        this.vy = Math.abs(remain) > 1 ? Math.sign(remain) * speed : 0;
       }
     }
 
     // 处理武器发射
     this.updateWeapons(dt);
-  }
-
-  // 沿当前 dir 前进并处理左右边界反弹（回正阶段沿用 X 轴运动；规避阶段已改为按船头航向位移）
-  private moveForward(distance: number): void {
-    const bounds = shipBounds(this);
-    this.x += this.dir * distance;
-    if (this.x < bounds.minX) {
-      this.x = bounds.minX;
-      this.dir = 1;
-      this.baseAngle = 0;
-    }
-    if (this.x > bounds.maxX) {
-      this.x = bounds.maxX;
-      this.dir = -1;
-      this.baseAngle = Math.PI;
-    }
-    this.y = clamp(this.y, bounds.minY, bounds.maxY);
   }
 
   // 炮管对准指定角度才算瞄准完成
@@ -390,6 +435,58 @@ export class ShipImpl implements Ship {
     this.aimAngle = approachAngle(this.aimAngle, aim, P.turretTurnRate * dt * rateScale);
   }
 
+  /** 从 from 到 aim 的主炮弹道是否会扫到友舰（包含散布和曲射偏移） */
+  private isShellPathClear(from: { x: number; y: number }, aim: { x: number; y: number }): boolean {
+    const game = getGameInstance();
+    if (!game) return false;
+    return !isFriendlyFireRisk({
+      shooter: this,
+      ships: game.ships,
+      from,
+      to: aim,
+      speed: CANNON.speed,
+      projectileRadius: CANNON.radius,
+      safetyMargin: SHELL_SAFETY_MARGIN,
+      spread: CANNON.scatter,
+      bend: CANNON.bend,
+      // 曲射越过近处友舰：远距离射击时不再因为贴近自己的友舰而不敢开炮
+      arcClearance: SHELL_ARC_CLEARANCE,
+    });
+  }
+
+  /** 从本舰朝 (x, y) 的鱼雷航线是否仍安全（齐射期间友舰可能已经切入航线） */
+  private isTorpedoPathClear(x: number, y: number): boolean {
+    const game = getGameInstance();
+    if (!game) return false;
+    const dx = x - this.x;
+    const dy = y - this.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1) return true;
+    const dirX = dx / distance;
+    const dirY = dy / distance;
+    // 鱼雷只看近处：更远的友舰有足够时间自行规避，不该让发射舰一直不敢出手
+    const checkDistance = Math.min(TORPEDO.range, TORPEDO_NEAR_FRIENDLY_DISTANCE);
+    const pathEnd = { x: this.x + dirX * checkDistance, y: this.y + dirY * checkDistance };
+    return !isFriendlyFireRisk({
+      shooter: this,
+      ships: game.ships,
+      from: this,
+      to: pathEnd,
+      speed: TORPEDO.speed,
+      projectileRadius: TORPEDO.radius,
+      safetyMargin: TORPEDO_SAFETY_MARGIN,
+      spread: TORPEDO.scatter,
+      spreadDistance: distance,
+      // 只对近处航线负责：更远的友舰会收到鱼雷预警自行规避
+      ignoreBeyondPath: true,
+    });
+  }
+
+  /** 按本舰主炮射速掷一次冷却：护卫舰 ×1，鱼雷艇 ×2（射速 50%） */
+  private rollGunCooldown(): number {
+    return rand(CANNON.cooldownMin, CANNON.cooldownMax) * this.gunCooldownFactor;
+  }
+
   // 手动指定点：所有炮都对准后才开火；冷却中则保持瞄准继续等待
   private fireManualVolley(point: SailOrder): void {
     if (this.gunCD > 0 && this.torpCD > 0) return;
@@ -398,7 +495,7 @@ export class ShipImpl implements Ship {
 
     let fired = false;
     if (this.gunCD <= 0) {
-      this.gunCD = rand(CANNON.cooldownMin, CANNON.cooldownMax);
+      this.gunCD = this.rollGunCooldown();
       // 多炮塔逐门开火：先打第一门，其余由齐射队列按间隔依次打出
       this.startGunVolley(null, point.x, point.y);
       fired = true;
@@ -422,9 +519,15 @@ export class ShipImpl implements Ship {
     if (!game) return;
 
     if (this.gunCD <= 0 && withinRange(this, target, CANNON.range)) {
-      this.gunCD = rand(CANNON.cooldownMin, CANNON.cooldownMax);
-      // 多炮塔逐门开火：第一门立即开火，后续炮塔按间隔依次跟上
-      this.startGunVolley(target, target.x, target.y);
+      // 发射前先做友军火力检查：友舰挡在炮线上时短暂等待，避免把炮弹打到队友身上
+      const aimPoint = predictAim(this, target, CANNON.speed);
+      if (this.isShellPathClear(this, aimPoint)) {
+        this.gunCD = this.rollGunCooldown();
+        // 多炮塔逐门开火：第一门立即开火，后续炮塔按间隔依次跟上
+        this.startGunVolley(target, target.x, target.y);
+      } else {
+        this.gunCD = GUN_RETRY_DELAY;
+      }
     }
     if (this.torpCD <= 0 && withinRange(this, target, TORPEDO.range)) {
       // 先规划齐射：目标横船时按本舰种的完整数量打，否则只打最低 3 枚；
@@ -454,7 +557,7 @@ export class ShipImpl implements Ship {
   }
 
   /** 某门炮在舰体上的世界坐标：炮口从炮塔位置而非船心打出 */
-  private turretPosition(index: number): { x: number; y: number } {
+  turretPosition(index: number): { x: number; y: number } {
     const mount = getShipClassSpec(this.shipClass).turrets[index];
     const offset = (mount?.offsetRatio ?? 0) * this.len;
     return {
@@ -506,7 +609,15 @@ export class ShipImpl implements Ship {
     const game = getGameInstance();
     if (!game) return;
 
+    // 后撤时只允许舰尾炮还击：舰首 / 中部炮不得开火
+    if (this.gunMode === "aftOnly" && getShipClassSpec(this.shipClass).turrets[index]?.facing !== "aft") return;
+
     const from = this.turretPosition(index);
+    // 与 Game.fireShell 使用同一套提前量；手动射击则直取锁定点
+    const aim = target ? predictAim(from, target, CANNON.speed) : { x, y };
+    // 逐炮检查：齐射期间目标 / 友舰都在移动，后面几门炮可能已经不具备安全射界
+    if (!this.isShellPathClear(from, aim)) return;
+
     if (target) game.fireShell(this, target, from);
     else game.fireShellAt(this, x, y, from);
 
@@ -520,7 +631,11 @@ export class ShipImpl implements Ship {
   private startTorpedoVolley(x: number, y: number, salvo: number): void {
     const game = getGameInstance();
     if (!game || salvo <= 0) return;
+    // 手动指令也可能把鱼雷打到友舰身上：第一发同样先做安全校验
+    if (!this.isTorpedoPathClear(x, y)) return;
     game.fireTorpedoAt(this, x, y, 0);
+    // 通知行动模式：鱼雷已经打出去，舰种可以据此进入「打了就跑」阶段
+    this.actionMode.onTorpedoLaunched(this);
     const remaining = salvo - 1;
     this.torpVolley = remaining > 0 ? { fired: 1, remaining, timer: Math.max(0.05, TORPEDO.salvoInterval), aimX: x, aimY: y } : null;
   }
@@ -535,6 +650,12 @@ export class ShipImpl implements Ship {
 
     const game = getGameInstance();
     if (!game) {
+      this.torpVolley = null;
+      return;
+    }
+
+    // 齐射是逐发打的，友舰可能在间隔里切入航线；不安全就取消剩余鱼雷
+    if (!this.isTorpedoPathClear(volley.aimX, volley.aimY)) {
       this.torpVolley = null;
       return;
     }
@@ -558,6 +679,8 @@ export class ShipImpl implements Ship {
 
     // 手动射击指令优先于自动交战
     if (this.aimOrder) {
+      // 玩家要求集火时不受后撤阶段的舰尾炮限制
+      this.gunMode = "all";
       const order = this.aimOrder;
       const aim = Math.atan2(order.y - this.y, order.x - this.x);
       this.turnTurretToward(aim, dt);

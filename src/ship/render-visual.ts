@@ -1,9 +1,21 @@
 // 舰船可视对象的创建：主游戏与 playground 共用同一套，避免重复实现。
 // 选择/输入由 game/selection.ts 的 bindPointerInput 统一处理；此处只负责 Mesh / 贴图 / 选中圈的创建。
-import { Color3, DynamicTexture, MeshBuilder, TransformNode, type LinesMesh, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
+import {
+  Color3,
+  DynamicTexture,
+  MeshBuilder,
+  StandardMaterial,
+  TransformNode,
+  Vector3,
+  type LinesMesh,
+  type Mesh,
+  type Scene,
+} from "@babylonjs/core";
 import { MAIN_TURRET_BARREL, MAIN_TURRET_RADIUS, paintHull } from "../game/textures";
 import { createSelectionRing, type SelectionRing } from "../game/selection";
+import { P } from "../game/utils";
 import { createPlane, createSpriteMaterial, toCanvas2D, worldToScene } from "../babylon";
+import { getWeaponSpec } from "../weapons/spec";
 import { paintCannonTurret } from "../weapons";
 import { getShipClassSpec } from "./ship-class";
 import type { ShipHud, ShipHudLayer } from "./hud";
@@ -51,6 +63,8 @@ export interface ShipVisual {
   turretMaterial: StandardMaterial;
   turretTexture: DynamicTexture;
   shipSize: number;
+  /** 每门炮的射程扇形（选中时显示，1秒可转角度）：fill 是填充区域，edges 是边缘弧线 */
+  rangeArcs: { fill: Mesh; edges: Mesh[] }[];
 }
 
 // 创建一门炮塔：pivot 挂在舰体上负责转向，plane 挂在 pivot 上负责显示
@@ -76,6 +90,98 @@ function createTurret(
   plane.scaling.setAll(scale);
 
   return { pivot, mesh: plane, scale, restAngle };
+}
+
+// 创建单门炮的射程扇形：以 (0,0) 为中心、局部 +X 为基准方向，从 -turnRate 到 +turnRate 的扇形区域。
+// fill 是极其透明的浅红扇形面积，edges 是淡红色的边缘弧线与半径线。
+// 创建后由调用方通过 position / rotation.z 把它放到炮塔世界坐标并朝向当前 aimAngle。
+function createRangeArc(
+  name: string,
+  scene: Scene,
+  range: number,
+  turnRate: number,
+): {
+  fill: Mesh;
+  edges: Mesh[];
+} {
+  const inner = 6;
+  const outer = range;
+  const segments = 24;
+  const innerArc: Vector3[] = [];
+  const outerArc: Vector3[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const a = -turnRate + turnRate * 2 * t;
+    const cx = Math.cos(a);
+    const cy = Math.sin(a);
+    innerArc.push(new Vector3(cx * inner, cy * inner, 0));
+    outerArc.push(new Vector3(cx * outer, cy * outer, 0));
+  }
+
+  // 扇形填充区域：inner -> outer 的环带 Ribbon，极其透明浅红
+  const fill = MeshBuilder.CreateRibbon(`rangeArcFill_${name}`, { pathArray: [innerArc, outerArc] }, scene);
+  const fillMat = new StandardMaterial(`rangeArcFillMat_${name}`, scene);
+  fillMat.diffuseColor = Color3.FromHexString("#ff6b6b");
+  fillMat.emissiveColor = Color3.FromHexString("#ff6b6b");
+  fillMat.alpha = 0.06;
+  fillMat.disableDepthWrite = true;
+  fill.material = fillMat;
+  fill.renderingGroupId = RG_SHIP;
+  fill.isPickable = false;
+  fill.alphaIndex = TURRET_ALPHA_INDEX;
+
+  // 边缘：淡红色弧线与半径线
+  const edgeColor = Color3.FromHexString("#ff6b6b");
+  const edges: Mesh[] = [];
+
+  const innerLine = MeshBuilder.CreateLines(`rangeArcInner_${name}`, { points: innerArc }, scene);
+  innerLine.color = edgeColor;
+  innerLine.alpha = 0.25;
+  innerLine.renderingGroupId = RG_SHIP;
+  innerLine.isPickable = false;
+  edges.push(innerLine);
+
+  const outerLine = MeshBuilder.CreateLines(`rangeArcOuter_${name}`, { points: outerArc }, scene);
+  outerLine.color = edgeColor;
+  outerLine.alpha = 0.25;
+  outerLine.renderingGroupId = RG_SHIP;
+  outerLine.isPickable = false;
+  edges.push(outerLine);
+
+  const startA = -turnRate;
+  const endA = turnRate;
+  const scx = Math.cos(startA);
+  const scy = Math.sin(startA);
+  const ecx = Math.cos(endA);
+  const ecy = Math.sin(endA);
+
+  const radius1 = MeshBuilder.CreateLines(
+    `rangeArcRadius1_${name}`,
+    {
+      points: [Vector3.Zero(), new Vector3(scx * inner, scy * inner, 0), new Vector3(scx * outer, scy * outer, 0)],
+    },
+    scene,
+  );
+  radius1.color = edgeColor;
+  radius1.alpha = 0.45;
+  radius1.renderingGroupId = RG_SHIP;
+  radius1.isPickable = false;
+  edges.push(radius1);
+
+  const radius2 = MeshBuilder.CreateLines(
+    `rangeArcRadius2_${name}`,
+    {
+      points: [Vector3.Zero(), new Vector3(ecx * inner, ecy * inner, 0), new Vector3(ecx * outer, ecy * outer, 0)],
+    },
+    scene,
+  );
+  radius2.color = edgeColor;
+  radius2.alpha = 0.45;
+  radius2.renderingGroupId = RG_SHIP;
+  radius2.isPickable = false;
+  edges.push(radius2);
+
+  return { fill, edges };
 }
 
 /**
@@ -148,6 +254,12 @@ export function createShipVisual(ship: Ship, scene: Scene, hudLayer: ShipHudLaye
     );
   });
 
+  // 射程扇形：选中时显示每门炮 1 秒内可转到的扇形区域
+  const cannonRange = getWeaponSpec("shell").range;
+  const rangeArcs = getShipClassSpec(ship.shipClass).turrets.map((_mount, index) =>
+    createRangeArc(`${ship.name}_arc_${index}`, scene, cannonRange, P.turretTurnRate),
+  );
+
   return {
     mesh,
     material: mesh.material as StandardMaterial,
@@ -159,6 +271,7 @@ export function createShipVisual(ship: Ship, scene: Scene, hudLayer: ShipHudLaye
     turretMaterial,
     turretTexture,
     shipSize,
+    rangeArcs,
   };
 }
 
@@ -175,12 +288,47 @@ export function syncShipTurrets(visual: ShipVisual, ship: Ship): void {
   }
 }
 
+// 同步射程弧：仅选中时显示，每帧把弧移到炮塔世界坐标并朝向当前 aimAngle。
+// oxlint-disable-next-line complexity
+function syncRangeArcs(visual: ShipVisual, ship: Ship, selected: boolean): void {
+  for (let i = 0; i < visual.rangeArcs.length; i++) {
+    const arc = visual.rangeArcs[i];
+    if (!selected) {
+      arc.fill.setEnabled(false);
+      for (const edge of arc.edges) edge.setEnabled(false);
+      continue;
+    }
+
+    const from = ship.turretPosition(i);
+    const center = worldToScene(from.x, from.y);
+    arc.fill.position.copyFrom(center);
+    for (const edge of arc.edges) edge.position.copyFrom(center);
+
+    // 游戏坐标 Y 向下，Babylon 坐标 Y 向上，aimAngle 需要取反才是场景里的朝向
+    arc.fill.rotation.z = -ship.aimAngle;
+    for (const edge of arc.edges) edge.rotation.z = -ship.aimAngle;
+
+    arc.fill.setEnabled(true);
+    for (const edge of arc.edges) edge.setEnabled(true);
+  }
+}
+
+// 释放射程弧
+export function disposeShipRangeArcs(visual: ShipVisual): void {
+  for (const arc of visual.rangeArcs) {
+    arc.fill.dispose();
+    for (const edge of arc.edges) edge.dispose();
+  }
+  visual.rangeArcs.length = 0;
+}
+
 // 释放炮塔：pivot.dispose() 会连同子 Mesh 一起销毁，材质/贴图为所有炮塔共用，只释放一次
 export function disposeShipTurrets(visual: ShipVisual): void {
   for (const turret of visual.turrets) turret.pivot.dispose();
   visual.turrets.length = 0;
   visual.turretMaterial.dispose();
   visual.turretTexture.dispose();
+  disposeShipRangeArcs(visual);
 }
 
 // 销毁导航虚线（材质由 LinesMesh 内部管理）
@@ -239,8 +387,12 @@ export function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean
   visual.hud.setVisible(alive);
   visual.ring.mesh.setEnabled(alive && selected);
   if (!alive) {
-    // 船已阵亡：导航虚线必须一起清掉，否则会残留在海面上
+    // 船已阵亡：导航虚线和射程扇形必须一起清掉，否则会残留在海面上
     disposeNavLine(visual);
+    for (const arc of visual.rangeArcs) {
+      arc.fill.setEnabled(false);
+      for (const edge of arc.edges) edge.setEnabled(false);
+    }
     return;
   }
 
@@ -258,6 +410,9 @@ export function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean
 
   // 炮塔转向 / 后坐只改变换，舰体贴图创建后不再重绘
   syncShipTurrets(visual, ship);
+
+  // 选中时显示每门炮的射程弧（1秒可转区域）
+  syncRangeArcs(visual, ship, selected);
 
   visual.hud.sync(ship);
 }

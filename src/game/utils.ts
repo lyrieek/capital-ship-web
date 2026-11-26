@@ -91,3 +91,28 @@ export function approachValue(cur: number, target: number, step: number): number
   if (Math.abs(target - cur) <= step) return target;
   return cur + Math.sign(target - cur) * step;
 }
+
+/** 点到线段的最近距离 */
+export function pointSegmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const lengthSq = abx * abx + aby * aby;
+  const t = lengthSq > 0 ? clamp(((px - ax) * abx + (py - ay) * aby) / lengthSq, 0, 1) : 0;
+  return Math.hypot(px - (ax + abx * t), py - (ay + aby * t));
+}
+
+/**
+ * 计算点到舰船胶囊轮廓的最近距离（像素）。
+ * 胶囊 = 沿航向的线段 + 半舰宽半径；返回负值表示点在舰体内部。
+ * 用于规避判定和友军火力检查，比单个包围圆更贴近真实船形：
+ * 顺着炮线方向的友舰投影窄，不会因为半舰长而误判成大圆。
+ */
+export function shipCapsuleClearance(px: number, py: number, ship: { x: number; y: number; len: number; wid: number; angle: number }): number {
+  const halfWidth = ship.wid / 2;
+  // 线段两端各缩进半舰宽，保证胶囊是「船形」而不是两端带尖的雪茄
+  const halfLength = Math.max(0, ship.len / 2 - halfWidth);
+  const ux = Math.cos(ship.angle) * halfLength;
+  const uy = Math.sin(ship.angle) * halfLength;
+  const distance = pointSegmentDistance(px, py, ship.x - ux, ship.y - uy, ship.x + ux, ship.y + uy);
+  return distance - halfWidth;
+}

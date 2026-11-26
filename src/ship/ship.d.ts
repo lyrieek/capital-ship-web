@@ -26,6 +26,23 @@ export interface SailOrder {
 }
 
 /**
+ * 由运动层计算的一帧运动结果。动作逻辑不构造或提交这个结构；
+ * 只有 locomotion 完成舵角、地形与边界处理后才会交给舰体应用。
+ */
+export interface ShipMotionStep {
+  /** 本帧实际位移，而不是可任意指定的目标坐标 */
+  dx: number;
+  dy: number;
+  /** 用于校验位移没有超过当前最大航速 */
+  dt: number;
+  /** 本帧运动层算出的朝向与速度，用于威胁预判 */
+  angle: number;
+  vx: number;
+  vy: number;
+  dir: 1 | -1;
+}
+
+/**
  * 进行中的鱼雷齐射队列。
  * 齐射间隔由舰船自己计时、逐发创建弹药；舰船沉没后队列随之消失，
  * 不会再出现「沉船后提前摆好的鱼雷陆续飞出去」。
@@ -45,9 +62,9 @@ export interface TorpedoVolley {
 export interface ShipConfig {
   // 舰种；缺省为鱼雷艇
   shipClass?: ShipClassId;
-  // X坐标，可选；未设置时由 RestrictArea 自动摆船分配
+  // 出生 X 坐标，可选；只用于初始化，未设置时由 RestrictArea 摆放
   x?: number;
-  // Y坐标，可选；未设置时由 RestrictArea 自动摆船分配
+  // 出生 Y 坐标，可选；只用于初始化，未设置时由 RestrictArea 摆放
   y?: number;
   // 航向方向：1-右，-1-左，可选；未设置时由 RestrictArea 按阵营分配
   dir?: 1 | -1;
@@ -65,6 +82,8 @@ export interface ShipConfig {
   baseY?: number;
   // 巡航速度系数（相对 P.moveSpeed）；缺省使用舰种参数
   cruiseFactor?: number;
+  // 主炮冷却倍率；缺省使用舰种参数
+  gunCooldownFactor?: number;
   // 行动模式速度倍率下限 / 上限；缺省 0.7 / 1.6
   speedMin?: number;
   speedMax?: number;
@@ -72,15 +91,14 @@ export interface ShipConfig {
   accelRate?: number;
   // 规避行为；缺省使用 DefaultEvasionBehavior，可按舰船类型替换
   evasionBehavior?: EvasionBehavior;
-  // 行动模式；缺省按舰种创建，目前鱼雷艇 / 护卫舰都使用 SmallShipAction
+  // 行动模式；缺省按舰种创建
   actionMode?: ActionMode;
 }
 
 export interface Ship extends ShipConfig {
-  // X坐标
-  x: number;
-  // Y坐标
-  y: number;
+  // 坐标和姿态只读；运行时位置由 steering / 碰撞层更新，禁止行动逻辑直接赋值。
+  readonly x: number;
+  readonly y: number;
   // 舰种
   shipClass: ShipClassId;
   // 火炮数量（等于炮塔布局中的炮塔数）
@@ -107,6 +125,8 @@ export interface Ship extends ShipConfig {
   actionMode: ActionMode;
   // 巡航速度系数（相对 P.moveSpeed）
   cruiseFactor: number;
+  // 主炮冷却倍率：1 = 标准射速，2 = 冷却翻倍（射速 50%）
+  gunCooldownFactor: number;
   // 当前速度倍率（相对巡航速度），由 locomotion 平滑逼近
   speedFactor: number;
   // 行动模式允许的速度倍率范围
@@ -130,7 +150,7 @@ export interface Ship extends ShipConfig {
   // 舰船宽度
   wid: number;
   // 基准角度（朝向）
-  angle: number;
+  readonly angle: number;
   /**
    * 舰船状态
    * normal-正常，dodge-规避（沿用旧命名以兼容 HUD/i18n），recover-回正
@@ -149,11 +169,13 @@ export interface Ship extends ShipConfig {
   evasionDuration: number;
   evasionAmplitude: number;
   // X方向速度
-  vx: number;
+  readonly vx: number;
   // Y方向速度
-  vy: number;
+  readonly vy: number;
   // 主炮冷却时间
   gunCD: number;
+  // 主炮射界模式：all-全部炮塔；aftOnly-只允许舰尾炮塔开火（鱼雷艇后撤时）
+  gunMode: "all" | "aftOnly";
   // 鱼雷冷却时间
   torpCD: number;
   // 进行中的鱼雷齐射队列；由舰船逐发发射，船沉后自动作废
@@ -177,10 +199,33 @@ export interface Ship extends ShipConfig {
   findThreat(): ThreatItem | null;
   // 开始规避机动
   startEvasion(th: ThreatItem): void;
+  // 某门炮在舰体上的世界坐标：炮口从炮塔位置而非船心打出
+  turretPosition(index: number): { x: number; y: number };
   // 更新舰船状态
   update(dt: number): void;
   // 受到伤害
   takeDamage(dmg: number): void;
+}
+
+/**
+ * 仅运动层 / 碰撞层使用的可写能力。
+ * GameState、ActionMode 和 UI 都只拿 Ship 只读视图，不暴露这些位移入口。
+ */
+export interface ShipMotionTarget extends Ship {
+  /** 运动层提交已经积分、限界后的本帧位移，而不是任意目标 XY。 */
+  applyMotionStep(step: ShipMotionStep): void;
+  /** 碰撞求解器专用的位置修正，位移平分或来自地形推出。 */
+  applyCollisionCorrection(dx: number, dy: number): void;
+  /** 路点抵达后停止，不把舰船吸附到路点坐标。 */
+  stopMotion(): void;
+}
+
+/**
+ * 建船工厂的窄能力：只可在初始装配时指定一次出生位置，
+ * 不包含运行时移动或碰撞修正接口。
+ */
+export interface SpawnableShip extends Ship {
+  placeAtSpawn(x: number, y: number): void;
 }
 
 export interface ThreatItem {

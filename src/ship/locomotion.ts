@@ -1,7 +1,7 @@
 // 统一运动执行层：ActionMode 只输出「期望航向 + 相对巡航的速度倍率」，
 // 这里负责转向、平滑加减速、地形预避让、限制区边界处理，并同步 vx/vy。
 // 手动航行指令和舰船行动模式共用这一层，避免两套移动逻辑各写一遍。
-import type { Ship } from "./ship";
+import type { Ship, ShipMotionTarget } from "./ship";
 import { shipBounds } from "./bounds";
 import { angleDiff, approachAngle, approachValue, clamp, P } from "../game/utils";
 import { getTerrainField, type TerrainField } from "../terrain";
@@ -57,7 +57,7 @@ const BOUNDARY_PARALLEL_NEAR = 120;
 // 贴边期间船几乎不转向，如果疲劳不降，它会「赖」在边界上不愿再转回战场。
 const TURN_FATIGUE_RECOVER_EDGE = 0.4;
 
-export interface DriveOptions {
+export interface SteeringOptions {
   /** 撞到 minX/maxX / y 边界时反弹（AI 环绕用）；手动指令只做 clamp */
   bounce?: boolean;
   /** 航向未对准时按 cos 衰减速度（保留手动指令原来的手感） */
@@ -263,12 +263,18 @@ function findEscapeHeading(ship: Ship, field: TerrainField | null): number {
 }
 
 /**
- * 按意图推动舰船一帧。
- * @param heading 期望航向（弧度）
- * @param speedFactor 相对本舰巡航速度的倍率，会在 speedMin/speedMax 内平滑逼近
+ * 舵角运动的内部积分器。外部控制输入只能通过 steerShip 提供舵角；
+ * 此处统一做地形/边界处理、转向疲劳、速度平滑和位置积分。
  */
 // oxlint-disable-next-line max-statements complexity
-export function driveShip(ship: Ship, heading: number, speedFactor: number, dt: number, options: DriveOptions = {}): void {
+function integrateSteering(
+  ship: ShipMotionTarget,
+  requestedHeading: number,
+  speedFactor: number,
+  dt: number,
+  options: SteeringOptions,
+  rudderAuthority: number,
+): void {
   const prevX = ship.x;
   const prevY = ship.y;
   const bounds = shipBounds(ship);
@@ -281,7 +287,7 @@ export function driveShip(ship: Ship, heading: number, speedFactor: number, dt: 
   const terrainRadius = ship.wid / 2 + AVOID_MARGIN;
   const avoidTerrain = options.avoidTerrain !== false && field !== null;
 
-  let desired = heading;
+  let desired = requestedHeading;
   // forced = 地形 / 边界 / 脱困要求「必须转」，不受转向疲劳限制
   let forced = false;
   if (avoidTerrain) {
@@ -354,12 +360,14 @@ export function driveShip(ship: Ship, heading: number, speedFactor: number, dt: 
   // 转向疲劳只压「可转可不转」的小幅修正：疲劳满时最多忽略 30° 偏差，
   // 这样 AI 不会每帧追着径向误差来回摆，但大角度转向仍然正常执行。
   const error = angleDiff(ship.angle, desired);
-  let turnStep = P.turnRate * dt;
+  let turnStep = P.turnRate * dt * clamp(rudderAuthority, 0, 1);
+  // 地形、边界和脱困是安全层的强制操舵，不受玩家/AI 舵角比例限制。
+  if (forced) turnStep = P.turnRate * dt;
   if (options.useTurnFatigue && !forced && Math.abs(error) < ship.turnFatigue * TURN_DEAD_ZONE_MAX) turnStep = 0;
 
   const prevAngle = ship.angle;
-  if (turnStep > 0) ship.angle = approachAngle(ship.angle, desired, turnStep);
-  const turned = Math.abs(angleDiff(prevAngle, ship.angle));
+  let nextAngle = turnStep > 0 ? approachAngle(ship.angle, desired, turnStep) : ship.angle;
+  const turned = Math.abs(angleDiff(prevAngle, nextAngle));
 
   if (options.useTurnFatigue) {
     // 实际转过 180° 累计到 1
@@ -376,30 +384,63 @@ export function driveShip(ship: Ship, heading: number, speedFactor: number, dt: 
   }
 
   // 手动航行保留「航向偏得多就慢一点」的旧手感；行动模式则始终按船头速度前进
-  const alignment = options.alignSpeed ? Math.max(0, Math.cos(angleDiff(ship.angle, desired))) : 1;
+  const alignment = options.alignSpeed ? Math.max(0, Math.cos(angleDiff(nextAngle, desired))) : 1;
   const speed = P.moveSpeed * ship.cruiseFactor * ship.speedFactor * alignment;
 
-  let nextX = ship.x + Math.cos(ship.angle) * speed * dt;
-  let nextY = ship.y + Math.sin(ship.angle) * speed * dt;
+  let nextX = ship.x + Math.cos(nextAngle) * speed * dt;
+  let nextY = ship.y + Math.sin(nextAngle) * speed * dt;
 
   if (options.bounce) {
     if (nextX < bounds.minX || nextX > bounds.maxX) {
       nextX = clamp(nextX, bounds.minX, bounds.maxX);
-      ship.angle = Math.PI - ship.angle;
+      nextAngle = Math.PI - nextAngle;
     }
     if (nextY < bounds.minY || nextY > bounds.maxY) {
       nextY = clamp(nextY, bounds.minY, bounds.maxY);
-      ship.angle = -ship.angle;
+      nextAngle = -nextAngle;
     }
   }
 
-  ship.x = clamp(nextX, bounds.minX, bounds.maxX);
-  ship.y = clamp(nextY, bounds.minY, bounds.maxY);
+  nextX = clamp(nextX, bounds.minX, bounds.maxX);
+  nextY = clamp(nextY, bounds.minY, bounds.maxY);
 
   // 用实际位移反推速度，保证预判瞄准 / 鱼雷威胁计算读到的是真实速度
+  let vx = ship.vx;
+  let vy = ship.vy;
   if (dt > 0) {
-    ship.vx = (ship.x - prevX) / dt;
-    ship.vy = (ship.y - prevY) / dt;
+    vx = (nextX - prevX) / dt;
+    vy = (nextY - prevY) / dt;
   }
-  if (Math.abs(ship.vx) > 1) ship.dir = ship.vx > 0 ? 1 : -1;
+  const dir: 1 | -1 = Math.abs(vx) > 1 ? (vx > 0 ? 1 : -1) : ship.dir;
+  ship.applyMotionStep({ dx: nextX - prevX, dy: nextY - prevY, dt, angle: nextAngle, vx, vy, dir });
+}
+
+/**
+ * 执行一帧舵角命令。
+ * rudderDegrees 是持续操舵量：0 维持当前船头方向，+90 满舵右转，-90 满舵左转；
+ * speedFactor 是相对本舰巡航速度的油门倍率。角速度受 rudder 比例限制，
+ * 因此同样舵角下航速越快，实际转弯半径越大。
+ */
+export function steerShip(ship: ShipMotionTarget, rudderDegrees: number, speedFactor: number, dt: number, options: SteeringOptions = {}): void {
+  if (!Number.isFinite(rudderDegrees) || !Number.isFinite(speedFactor) || !Number.isFinite(dt) || dt < 0) {
+    throw new RangeError("steerShip requires finite rudder, throttle, and non-negative dt values");
+  }
+  const rudder = clamp(rudderDegrees, -90, 90);
+  const desiredHeading = ship.angle + (rudder * Math.PI) / 180;
+  integrateSteering(ship, desiredHeading, speedFactor, dt, options, Math.abs(rudder) / 90);
+}
+
+/**
+ * AI / 路点导航的薄适配器：上层仍可表达绝对期望航向，
+ * 但执行时转换成相对当前船头、且不超过 ±90° 的舵角命令。
+ */
+export function steerToHeading(ship: ShipMotionTarget, heading: number, speedFactor: number, dt: number, options: SteeringOptions = {}): void {
+  const headingError = angleDiff(ship.angle, heading);
+  // 每个导航命令最多只要求 90° 的相对转向；更大的掉头由后续帧连续完成。
+  const boundedError = clamp(headingError, -Math.PI / 2, Math.PI / 2);
+  const maxTurnStep = P.turnRate * dt;
+  // AI 仍保留原来的「大误差满舵、小误差刚好收敛」控制；
+  // 玩家/其他直接调用 steerShip 时，rudderDegrees 则按持续舵角比例控制角速度。
+  const authority = maxTurnStep > 0 ? Math.min(1, Math.abs(boundedError) / maxTurnStep) : 0;
+  integrateSteering(ship, ship.angle + boundedError, speedFactor, dt, options, authority);
 }

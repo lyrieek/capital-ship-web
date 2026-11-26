@@ -23,6 +23,7 @@ import {
   type FleetTeam,
 } from "../game/fleet";
 import { shipManager } from "../ship/ship-manager";
+import type { ShipBattleRecord } from "../game/BattleRecord";
 import Hud from "./Hud";
 import MapSelect from "./MapSelect";
 import BattleResult from "./BattleResult";
@@ -53,6 +54,10 @@ function BattleStage({ map, fleets, onChangeMap }: BattleStageProps) {
   const [sceneVersion, setSceneVersion] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [winnerTeam, setWinnerTeam] = useState<"red" | "blue" | null>(null);
+  // 结算数据在战斗结束瞬间抓成快照，之后不再依赖随时可能被清理的 gameInstance。
+  // 否则只要对局实例被清空或重建，面板就会变成空表 / 已显示的记录又消失。
+  const [results, setResults] = useState<ShipBattleRecord[]>([]);
+  const resultsRef = useRef<ShipBattleRecord[]>([]);
   const [restrictError, setRestrictError] = useState<string | null>(null);
   const [showRestrictError, setShowRestrictError] = useState(false);
   // Refs keep the render loop's closure from going stale.
@@ -107,6 +112,14 @@ function BattleStage({ map, fleets, onChangeMap }: BattleStageProps) {
     const canvas = canvasRef.current;
     const size = viewportRef.current;
     if (!canvas || !size) return;
+
+    // 新对局：清掉上一局的结算快照，避免面板闪回旧记录
+    gameOverRef.current = false;
+    winnerTeamRef.current = null;
+    resultsRef.current = [];
+    setGameOver(false);
+    setWinnerTeam(null);
+    setResults([]);
 
     // 地图决定地形摆位与限制区；initializeGame 必须在 initRender 之前完成。
     initializeGame(map, fleets);
@@ -187,7 +200,12 @@ function BattleStage({ map, fleets, onChangeMap }: BattleStageProps) {
       const dt = rawDt * getGameSpeedMultiplier();
 
       const game = getGameInstance();
-      if (!game) return;
+      if (!game) {
+        // 对局实例被外部清理的瞬间（例如热更新 / 重挂载）不推进模拟，
+        // 但仍渲染最后一帧，避免已打开的结算面板跟着整屏消失。
+        scene?.render();
+        return;
+      }
       game.update(dt);
 
       // Keyboard panning uses real time and is not affected by 2x game speed.
@@ -213,6 +231,13 @@ function BattleStage({ map, fleets, onChangeMap }: BattleStageProps) {
       if (game.over !== gameOverRef.current || game.winnerTeam !== winnerTeamRef.current) {
         gameOverRef.current = game.over;
         winnerTeamRef.current = game.winnerTeam;
+        // 结束的那一笔立刻冻结结算数据：面板只读这份快照，
+        // 后续即使 gameInstance 被清理 / 重建，也不会把已显示的记录清空。
+        if (game.over && resultsRef.current.length === 0) {
+          const snapshot = game.record.getResults();
+          resultsRef.current = snapshot;
+          setResults(snapshot);
+        }
         setGameOver(game.over);
         setWinnerTeam(game.winnerTeam);
       }
@@ -247,7 +272,6 @@ function BattleStage({ map, fleets, onChangeMap }: BattleStageProps) {
 
   const scene = sceneRef.current;
   const winnerText = winnerTeam === "red" ? t("hud.winnerRed") : winnerTeam === "blue" ? t("hud.winnerBlue") : t("hud.winnerDraw");
-  const results = gameOver ? (getGameInstance()?.record.getResults() ?? []) : [];
   const subtitle = t("battleRecord.mapInfo", { name: t(map.nameKey) });
   const stageHidden = tooSmall || viewport === null;
 

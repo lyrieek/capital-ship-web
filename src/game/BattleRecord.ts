@@ -95,6 +95,11 @@ export class BattleRecord {
   private entries: Entry[] = [];
   private endTime: number | null = null;
 
+  /** 已登记记录的舰船数量（结算面板诊断用） */
+  get size(): number {
+    return this.entries.length;
+  }
+
   /** 开新一局：按当前舰船重建记录 */
   reset(ships: readonly Ship[], startTime = 0): void {
     this.entries = ships.map((ship) => ({
@@ -131,7 +136,8 @@ export class BattleRecord {
     victimEntry.death = BattleRecord.describeDeath(killer, victim, weapon, shotDistance);
     victimEntry.deathSpeedFactor = victim.speedFactor;
 
-    if (!killer || killer === victim) return;
+    // 自沉或误杀友舰都不算击杀
+    if (!killer || killer === victim || killer.team === victim.team) return;
     const killerEntry = this.entries.find((entry) => entry.ship === killer);
     if (killerEntry) killerEntry.kills += 1;
   }

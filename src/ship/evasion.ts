@@ -9,7 +9,7 @@
  * 再按最早命中时刻反推规避速度，保证在命中前脱离。
  */
 import type { Ship, ThreatItem } from "./ship";
-import { clamp, P } from "../game/utils";
+import { clamp, P, shipCapsuleClearance } from "../game/utils";
 import { getWeaponSpec } from "../weapons";
 import { getGameInstance } from "../game/Game";
 
@@ -36,8 +36,9 @@ export interface EvasionBehavior {
   decide(ship: Ship, threat: ThreatItem): EvasionPlan | null;
 }
 
-// 评估未来威胁的时间窗（秒）：只看这段时间内会命中自己的鱼雷
-const THREAT_WINDOW = 2.2;
+// 评估未来威胁的时间窗（秒）：决定「预警范围」，只看这段时间内会命中自己的鱼雷。
+// 鱼雷速度 120 px/s，3.5 秒约等于 420px 的提前预警；与 ShipImpl.findThreat 共用。
+export const THREAT_WINDOW = 3.5;
 // 脱离命中椭圆之外再留的安全余量（像素）
 const CLEAR_MARGIN = 24;
 // 基础横移幅度（像素）：即使威胁不大也至少做这么点机动
@@ -48,6 +49,8 @@ const MAX_AMPLITUDE = 168;
 const AMPLITUDE_STEP = 12;
 // 规避最短持续时间（秒）
 const EVASION_DURATION = 0.9;
+// 规避最长持续时间（秒）：预警提前量变大后，不必为了很远的鱼雷一直停火横移
+const MAX_EVASION_DURATION = 2.6;
 // 规避时的速度系数范围
 const MIN_SPEED_FACTOR = 0.65;
 const MAX_SPEED_FACTOR = 1.6;
@@ -73,11 +76,10 @@ function closestApproachToPoint(q: { x: number; y: number; vx: number; vy: numbe
   return Math.hypot(cx - px, cy - py);
 }
 
-// 收集所有“会在时间窗内命中本舰”的鱼雷（按命中椭圆判定）
+// 收集所有“会在时间窗内命中本舰”的鱼雷（按舰体胶囊判定）
 function collectThreats(ship: Ship): ThreatItem[] {
   const game = getGameInstance();
   if (!game) return [];
-  const halfW = ship.wid / 2;
   const threats: ThreatItem[] = [];
   for (const p of game.projectiles) {
     if (p.owner === ship || p.kind !== "torpedo" || p.dead || p.fade !== undefined) continue;
@@ -90,19 +92,26 @@ function collectThreats(ship: Ship): ThreatItem[] {
     const t = -(rx * rvx + ry * rvy) / vv;
     if (t < 0 || t > THREAT_WINDOW) continue;
     const miss = Math.hypot(rx + rvx * t, ry + rvy * t);
-    // 只有真正落进命中椭圆的鱼雷才需要规避
-    if (miss <= getWeaponSpec(p.type).radius + halfW) threats.push({ t, p, miss });
+    // 用预测到最近接近时刻的两船位置，按舰体胶囊算净空；
+    // 只看中心距离会把擦着船头/船尾过去的鱼雷漏掉。
+    const px = p.x + p.vx * t;
+    const py = p.y + p.vy * t;
+    const sx = ship.x + ship.vx * t;
+    const sy = ship.y + ship.vy * t;
+    const clearance = shipCapsuleClearance(px, py, { x: sx, y: sy, len: ship.len, wid: ship.wid, angle: ship.angle });
+    if (clearance <= getWeaponSpec(p.type).dangerRadius) threats.push({ t, p, miss });
   }
   return threats;
 }
 
-// 候选位置的最坏情况余量：对全部威胁鱼雷取“离命中椭圆最近的距离”
+// 候选位置的最坏情况余量：对全部威胁鱼雷取“离舰体胶囊的最近距离”。
+// 这里把船心当成静止点，减去保守的半舰长，保证选择规避幅度时不会被擦边命中。
 function minClearance(ship: Ship, threats: ThreatItem[], candY: number): number {
-  const halfW = ship.wid / 2;
+  const hullHalfSpan = Math.max(ship.len, ship.wid) / 2;
   let minClear = Infinity;
   for (const th of threats) {
     const dist = closestApproachToPoint(th.p, ship.x, candY);
-    const clear = dist - getWeaponSpec(th.p.type).radius - halfW;
+    const clear = dist - getWeaponSpec(th.p.type).dangerRadius - hullHalfSpan;
     if (clear < minClear) minClear = clear;
   }
   return minClear;
@@ -180,7 +189,7 @@ export class DefaultEvasionBehavior implements EvasionBehavior {
       side: maneuver.side,
       amplitude: maneuver.amplitude,
       speedFactor,
-      duration: Math.max(EVASION_DURATION, travelTime),
+      duration: clamp(travelTime, EVASION_DURATION, MAX_EVASION_DURATION),
     };
   }
 }

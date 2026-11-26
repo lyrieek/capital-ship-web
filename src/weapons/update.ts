@@ -20,6 +20,11 @@ export interface ProjectileUpdateOptions {
   worldHeight: number;
   /** 命中回调 */
   onHit?: (projectile: Projectile, target: ProjectileTarget, x: number, y: number) => void;
+  /**
+   * 命中过滤：返回 false 表示这一发不会命中该目标，弹药继续飞行。
+   * 用于「曲射炮弹越过近处友舰」这类只影响碰撞、不影响弹道的规则。
+   */
+  canHit?: (projectile: Projectile, target: ProjectileTarget) => boolean;
   /** 撞上地形回调 */
   onTerrainHit?: (projectile: Projectile, x: number, y: number) => void;
   /** 落水回调：炮弹耗尽射程或飞出战场；鱼雷未命中会淡出，不触发此回调 */
@@ -45,10 +50,15 @@ function advance(projectile: Projectile, dt: number): void {
 }
 
 /** 判断弹药是否命中目标（椭圆判定） */
-function findHit(projectile: Projectile, targets: ProjectileTarget[]): ProjectileTarget | null {
+function findHit(
+  projectile: Projectile,
+  targets: ProjectileTarget[],
+  canHit?: (projectile: Projectile, target: ProjectileTarget) => boolean,
+): ProjectileTarget | null {
   for (const target of targets) {
     if (target === projectile.owner) continue;
     if (target.hp <= 0) continue;
+    if (canHit && !canHit(projectile, target)) continue;
 
     const dx = projectile.x - target.x;
     const dy = projectile.y - target.y;
@@ -115,7 +125,7 @@ export function updateProjectiles(dt: number, options: ProjectileUpdateOptions):
       continue;
     }
 
-    const target = findHit(projectile, targets);
+    const target = findHit(projectile, targets, options.canHit);
     if (target) {
       projectile.dead = true;
       options.onHit?.(projectile, target, projectile.x, projectile.y);
