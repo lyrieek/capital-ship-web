@@ -24,3 +24,9 @@
   font-size: 0.85rem;
   line-height: 1.4;
 }
+
+/* 尚未实现的武器大类：只做占位展示 */
+.weapons-planned {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

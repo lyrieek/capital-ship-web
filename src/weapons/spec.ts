@@ -1,14 +1,53 @@
-// 武器参数表：主炮（炮弹）与鱼雷
+// 武器参数表：先按「武器大类」抽象，再挂具体型号。
 // 数值集中在这里，游戏主场景和 playground 调试页共用同一份配置。
-import type { ProjectileType } from "./types";
+import type { ProjectileType, WeaponKind } from "./types";
 
-/** 武器类型 */
+/** 具体武器型号 id（目前只有主炮炮弹与鱼雷两种型号） */
 export type WeaponId = ProjectileType;
 
-/** 单个武器的完整参数 */
+/** 武器大类参数：只描述分类与实现状态，不绑定具体型号 */
+export interface WeaponKindSpec {
+  /** 大类标识 */
+  kind: WeaponKind;
+  /** 大类名称的 i18n key */
+  nameKey: string;
+  /** 是否已经实现；false 表示只占位，不能发射 */
+  implemented: boolean;
+}
+
+/** 武器大类表（按展示顺序） */
+export const WEAPON_KIND_SPECS: Record<WeaponKind, WeaponKindSpec> = {
+  cannon: { kind: "cannon", nameKey: "weapons.kind.cannon", implemented: true },
+  torpedo: { kind: "torpedo", nameKey: "weapons.kind.torpedo", implemented: true },
+  // 以下三类只有分类占位，尚未实现具体型号与行为
+  smoke: { kind: "smoke", nameKey: "weapons.kind.smoke", implemented: false },
+  mine: { kind: "mine", nameKey: "weapons.kind.mine", implemented: false },
+  depthCharge: { kind: "depthCharge", nameKey: "weapons.kind.depthCharge", implemented: false },
+};
+
+/** 全部武器大类（按展示顺序） */
+export const WEAPON_KIND_IDS: WeaponKind[] = ["cannon", "torpedo", "smoke", "mine", "depthCharge"];
+
+/** 取武器大类参数 */
+export function getWeaponKindSpec(kind: WeaponKind): WeaponKindSpec {
+  return WEAPON_KIND_SPECS[kind];
+}
+
+/** 该武器大类是否已经有具体实现 */
+export function isWeaponKindImplemented(kind: WeaponKind): boolean {
+  return WEAPON_KIND_SPECS[kind].implemented;
+}
+
+/** 单个具体武器型号的完整参数 */
 export interface WeaponSpec {
-  /** 武器类型 */
+  /** 具体型号 id */
   id: WeaponId;
+  /** 所属武器大类（抽象层） */
+  kind: WeaponKind;
+  /** 型号名称的 i18n key */
+  nameKey: string;
+  /** 最大射程（像素），超出射程不发射；弹药最多也只飞到这么远 */
+  range: number;
   /** 弹速（像素/秒） */
   speed: number;
   /** 伤害值 */
@@ -21,8 +60,6 @@ export interface WeaponSpec {
   salvoMax: number;
   /** 单次齐射中「精准弹」的数量：这些弹直取瞄准点，不做散布 */
   accurateCount: number;
-  /** 最大射程（像素），超出射程不发射；弹药最多也只飞到这么远 */
-  range: number;
   /** 两次齐射之间的冷却下限（秒） */
   cooldownMin: number;
   /** 两次齐射之间的冷却上限（秒） */
@@ -61,9 +98,11 @@ export interface WeaponSpec {
 
 /** 武器参数表 */
 export const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
-  // 主炮：单发曲射，弹道略微弯曲；射程有限，弹着点不会拖到地图边缘
+  // 主炮炮弹：单发曲射，弹道略微弯曲；射程有限，弹着点不会拖到地图边缘
   shell: {
     id: "shell",
+    kind: "cannon",
+    nameKey: "weapons.shell",
     speed: 528,
     damage: 10,
     radius: 26,
@@ -92,6 +131,8 @@ export const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
   // 鱼雷：低频齐射，一次随机 3~5 发；其中一颗直取瞄准点，其余散开
   torp: {
     id: "torp",
+    kind: "torpedo",
+    nameKey: "weapons.torp",
     // 鱼雷速度调慢，给规避留出反应时间
     speed: 120,
     damage: 30,
@@ -120,10 +161,10 @@ export const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
   },
 };
 
-/** 全部武器类型（按展示顺序） */
+/** 全部已实现的具体武器型号（按展示顺序） */
 export const WEAPON_IDS: WeaponId[] = ["shell", "torp"];
 
-/** 取武器参数 */
+/** 取具体型号参数 */
 export function getWeaponSpec(id: WeaponId): WeaponSpec {
   return WEAPON_SPECS[id];
 }

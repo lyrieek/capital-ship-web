@@ -1,6 +1,6 @@
 // 主游戏状态：地图、限制区、舰船、弹药与胜负判定。
 import type { GameState } from "./types";
-import { emitBurst, emitSmoke } from "./fx";
+import { emitBurst, emitSmoke, emitSplash } from "./fx";
 import type { Ship } from "../ship/ship";
 import { clearParticles, renderGame } from "./render";
 import { resolveCollisions as resolveShipCollisions } from "./collision";
@@ -236,9 +236,9 @@ export function initializeGame(map: GameMap, fleets?: FleetShips): GameState {
           emitBurst(x, y, spec.impactParticles, spec.impactColor);
         },
         onLanded: (_projectile, x, y) => {
-          // 炮弹落海：溅起一小片水花（位置收进海面范围内）
+          // 弹药落海：向斜上方溅起水花并受重力回落，而不是像陆地撞击那样向四周爆开
           const splash = clampToBounds({ x, y }, { width: W, height: H });
-          emitBurst(splash.x, splash.y, 16, "#bfe9ff");
+          emitSplash(splash.x, splash.y);
         },
       });
     },
@@ -255,12 +255,9 @@ export function initializeGame(map: GameMap, fleets?: FleetShips): GameState {
         if (!expandDone) {
           const progress = expandProgress(this.time);
           if (progress > 0) {
+            // 舰船持有的是限制区引用（ship.bounds），边界扩大后实时生效，无需逐船回写
             red.setBoundsX(lerp(red.bounds.minX, unionMinX, progress), lerp(red.bounds.maxX, unionMaxX, progress));
             blue.setBoundsX(lerp(blue.bounds.minX, unionMinX, progress), lerp(blue.bounds.maxX, unionMaxX, progress));
-            // 边界在扩大，必须同步给舰船，否则 clamp 仍停在旧边界
-            for (const ship of this.ships) {
-              (ship.team === "red" ? red : blue).applyTo(ship);
-            }
             if (progress >= 1) expandDone = true;
           }
         }

@@ -13,18 +13,10 @@ import { getCameraFocus, resetCameraFocus, setCameraFocus, updateCameraFocus } f
 import { bindPointerInput, ShipSelection } from "./selection";
 import { issueSelectionSail } from "./movement";
 import type { RestrictAreaImpl } from "./RestrictAreaImpl";
-import { applyZoomToCamera, createBabylonScene, getViewHeight, setCameraBaseSize, updateCameraEffect, worldToScene } from "../babylon";
+import { applyZoomToCamera, createBabylonScene, getViewHeight, setCameraBaseSize, updateCameraEffect } from "../babylon";
 import { createParticleFx, type ParticleFx } from "./particle-fx";
 import { createShipHudLayer, type ShipHudLayer } from "../ship/hud";
-import {
-  createShipVisual,
-  disposeNavLine,
-  disposeShipTurrets,
-  type ShipVisual,
-  RG_SHIP,
-  syncShipTurrets,
-  updateShipNavigationLine,
-} from "../ship/render-visual";
+import { createShipVisual, disposeNavLine, disposeShipTurrets, type ShipVisual, RG_SHIP, syncShipVisual } from "../ship/render-visual";
 
 // 渲染分组（Babylon 最多 4 组 0..3），组间自动清深度，按组顺序层叠：
 // 0 = 海面；1 = 地物 + 舰船/选中圈/炮塔（组内 alphaIndex 排序）；2 = 弹药/粒子/导航线。
@@ -113,49 +105,22 @@ function syncShips(game: GameState) {
     let visual = shipVisuals.get(ship);
     if (!visual) {
       // 先验证船位置是否在限制区内、是否落在地物上（在画船之前），不在则拒绝画并记录错误供 modal 显示；
-      // 然后将限制区边界应用到船上（供碰撞 clamp 使用）
+      // 然后把限制区绑定到船上（ship.bounds，供移动 / 碰撞实时读取 X/Y 边界）
       const area = restrictAreas?.find((a) => a.team === ship.team);
       const err = area?.validate(ship);
       if (err) {
         restrictError = err;
         continue;
       }
-      area?.applyTo(ship);
+      area?.attach(ship);
 
       visual = createShipVisual(ship, scene!, hudLayer, 1);
       shipVisuals.set(ship, visual);
     }
 
-    const alive = ship.alive;
+    // 单船视觉同步（位置/朝向/选中圈/导航线/闪白/炮塔/HUD）统一由 render-visual 提供
     const selected = shipSelection?.has(ship) ?? false;
-    visual.mesh.setEnabled(alive);
-    visual.hud.setVisible(alive);
-    visual.ring.mesh.setEnabled(alive && selected);
-    if (!alive) {
-      // 船已阵亡：导航虚线必须一起清掉，否则会残留在海面上
-      disposeNavLine(visual);
-      continue;
-    }
-
-    // 航行导航虚线：仅选中且有航行目标时显示，每帧重新计算不残留旧点
-    if (selected) {
-      updateShipNavigationLine(visual, ship, scene!);
-    } else {
-      disposeNavLine(visual);
-    }
-
-    visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
-    visual.mesh.rotation.z = -ship.angle;
-    visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
-
-    const flash = 1 + ship.hitFlash * 0.9;
-    visual.material.emissiveColor.set(flash, flash, flash);
-    visual.turretMaterial.emissiveColor.set(flash, flash, flash);
-
-    // 炮塔转向 / 后坐只改变换，舰体贴图创建后不再重绘
-    syncShipTurrets(visual, ship);
-
-    visual.hud.sync(ship);
+    syncShipVisual(ship, visual, selected, scene!);
   }
 
   for (const [ship, visual] of shipVisuals) {

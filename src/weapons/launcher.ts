@@ -1,5 +1,5 @@
 // 武器发射平台/炮塔绘制（游戏与调试页共用）
-import type { WeaponId } from "./spec";
+import { getWeaponSpec, type WeaponId } from "./spec";
 
 const TAU = Math.PI * 2;
 
@@ -361,7 +361,8 @@ export function paintLauncherPlatform(ctx: CanvasRenderingContext2D, width: numb
   ctx.fillStyle = "rgba(255,255,255,.16)";
   ctx.fillRect(width * 0.12, height * 0.42, width * 0.28, height * 0.16);
 
-  if (weapon === "torp") {
+  // 按武器大类选择发射平台造型，具体型号共用同一套外观
+  if (getWeaponSpec(weapon).kind === "torpedo") {
     drawTorpedoLauncher(ctx, width, height);
   } else {
     drawCannonLauncher(ctx, width, height);

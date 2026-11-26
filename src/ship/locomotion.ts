@@ -2,6 +2,7 @@
 // 这里负责转向、平滑加减速、地形预避让、限制区边界处理，并同步 vx/vy。
 // 手动航行指令和舰船行动模式共用这一层，避免两套移动逻辑各写一遍。
 import type { Ship } from "./ship";
+import { shipBounds } from "./bounds";
 import { angleDiff, approachAngle, approachValue, clamp, P } from "../game/utils";
 import { getTerrainField, type TerrainField } from "../terrain";
 
@@ -112,9 +113,10 @@ export function resetDriveMemory(ship: Ship): void {
 
 /** 沿 heading 前视 lookAhead，是否会越过限制区/地图边界 */
 export function isHeadingOutOfBounds(ship: Ship, heading: number, lookAhead = BOUNDARY_LOOK_AHEAD): boolean {
+  const bounds = shipBounds(ship);
   const x = ship.x + Math.cos(heading) * lookAhead;
   const y = ship.y + Math.sin(heading) * lookAhead;
-  return x < ship.minX || x > ship.maxX || y < P.yMin || y > P.yMax;
+  return x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY;
 }
 
 /**
@@ -122,15 +124,16 @@ export function isHeadingOutOfBounds(ship: Ship, heading: number, lookAhead = BO
  * 只做 2 次，足够处理角落同时越界的情况。
  */
 export function reflectHeadingInsideBounds(ship: Ship, heading: number, lookAhead = BOUNDARY_LOOK_AHEAD): number {
+  const bounds = shipBounds(ship);
   let result = heading;
   for (let i = 0; i < 2; i++) {
     const x = ship.x + Math.cos(result) * lookAhead;
     const y = ship.y + Math.sin(result) * lookAhead;
-    if (x < ship.minX || x > ship.maxX) {
+    if (x < bounds.minX || x > bounds.maxX) {
       result = Math.PI - result;
       continue;
     }
-    if (y < P.yMin || y > P.yMax) {
+    if (y < bounds.minY || y > bounds.maxY) {
       result = -result;
       continue;
     }
@@ -152,19 +155,20 @@ interface BoundaryParallel {
  * 并排除本身又会撞到相邻边界的候选；找不到就返回 null，由调用方减速掉头。
  */
 function findBoundaryParallelHeading(ship: Ship, heading: number, maxTurn = BOUNDARY_PARALLEL_MAX_TURN): BoundaryParallel | null {
+  const bounds = shipBounds(ship);
   const x = ship.x + Math.cos(heading) * BOUNDARY_LOOK_AHEAD;
   const y = ship.y + Math.sin(heading) * BOUNDARY_LOOK_AHEAD;
-  const outX = x < ship.minX || x > ship.maxX;
-  const outY = y < P.yMin || y > P.yMax;
+  const outX = x < bounds.minX || x > bounds.maxX;
+  const outY = y < bounds.minY || y > bounds.maxY;
   if (!outX && !outY) return null;
 
   const candidates: BoundaryParallel[] = [];
   if (outX) {
-    const side: 1 | -1 = x > ship.maxX ? 1 : -1;
+    const side: 1 | -1 = x > bounds.maxX ? 1 : -1;
     candidates.push({ heading: Math.PI / 2, axis: "x", side }, { heading: -Math.PI / 2, axis: "x", side });
   }
   if (outY) {
-    const side: 1 | -1 = y > P.yMax ? 1 : -1;
+    const side: 1 | -1 = y > bounds.maxY ? 1 : -1;
     candidates.push({ heading: 0, axis: "y", side }, { heading: Math.PI, axis: "y", side });
   }
 
@@ -184,8 +188,9 @@ function findBoundaryParallelHeading(ship: Ship, heading: number, maxTurn = BOUN
 
 /** 船心到所贴边界的垂直距离（px） */
 function boundaryDistance(ship: Ship, axis: "x" | "y", side: 1 | -1): number {
-  if (axis === "x") return side > 0 ? ship.maxX - ship.x : ship.x - ship.minX;
-  return side > 0 ? P.yMax - ship.y : ship.y - P.yMin;
+  const bounds = shipBounds(ship);
+  if (axis === "x") return side > 0 ? bounds.maxX - ship.x : ship.x - bounds.minX;
+  return side > 0 ? bounds.maxY - ship.y : ship.y - bounds.minY;
 }
 
 /** 按权重在两段航向之间取中间值（权重 0 = 完全用 from，1 = 完全用 to） */
@@ -237,6 +242,7 @@ function updateStuck(ship: Ship, memory: DriveMemory, dt: number): void {
 
 /** 卡位脱困：挑一个前方通畅、尽量远离边界、且不要突然掉头的方向 */
 function findEscapeHeading(ship: Ship, field: TerrainField | null): number {
+  const bounds = shipBounds(ship);
   const radius = ship.wid / 2 + AVOID_MARGIN;
   let best = ship.angle;
   let bestScore = -Infinity;
@@ -247,7 +253,7 @@ function findEscapeHeading(ship: Ship, field: TerrainField | null): number {
     if (!field || !field.isPathBlocked(ship.x, ship.y, heading, ESCAPE_LOOK_AHEAD, radius)) score += 3;
     const px = ship.x + Math.cos(heading) * ESCAPE_LOOK_AHEAD;
     const py = ship.y + Math.sin(heading) * ESCAPE_LOOK_AHEAD;
-    if (px < ship.minX || px > ship.maxX || py < P.yMin || py > P.yMax) score -= 4;
+    if (px < bounds.minX || px > bounds.maxX || py < bounds.minY || py > bounds.maxY) score -= 4;
     if (score > bestScore) {
       bestScore = score;
       best = heading;
@@ -265,6 +271,7 @@ function findEscapeHeading(ship: Ship, field: TerrainField | null): number {
 export function driveShip(ship: Ship, heading: number, speedFactor: number, dt: number, options: DriveOptions = {}): void {
   const prevX = ship.x;
   const prevY = ship.y;
+  const bounds = shipBounds(ship);
 
   // 先根据上一帧的净位移判断是否卡位，再决定本帧是否脱困
   const memory = getDriveMemory(ship);
@@ -376,18 +383,18 @@ export function driveShip(ship: Ship, heading: number, speedFactor: number, dt: 
   let nextY = ship.y + Math.sin(ship.angle) * speed * dt;
 
   if (options.bounce) {
-    if (nextX < ship.minX || nextX > ship.maxX) {
-      nextX = clamp(nextX, ship.minX, ship.maxX);
+    if (nextX < bounds.minX || nextX > bounds.maxX) {
+      nextX = clamp(nextX, bounds.minX, bounds.maxX);
       ship.angle = Math.PI - ship.angle;
     }
-    if (nextY < P.yMin || nextY > P.yMax) {
-      nextY = clamp(nextY, P.yMin, P.yMax);
+    if (nextY < bounds.minY || nextY > bounds.maxY) {
+      nextY = clamp(nextY, bounds.minY, bounds.maxY);
       ship.angle = -ship.angle;
     }
   }
 
-  ship.x = clamp(nextX, ship.minX, ship.maxX);
-  ship.y = clamp(nextY, P.yMin, P.yMax);
+  ship.x = clamp(nextX, bounds.minX, bounds.maxX);
+  ship.y = clamp(nextY, bounds.minY, bounds.maxY);
 
   // 用实际位移反推速度，保证预判瞄准 / 鱼雷威胁计算读到的是真实速度
   if (dt > 0) {

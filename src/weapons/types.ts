@@ -3,7 +3,17 @@
 // 这里只描述「数据」，不依赖游戏层类型，方便独立复用。
 import type { Curve2 } from "./trajectory";
 
-/** 弹药类型：shell-炮弹（主炮），torp-鱼雷 */
+/**
+ * 武器大类（抽象层）：描述“这是什么武器”，不绑定具体型号。
+ * 游戏逻辑（地形阻挡、规避判定等）优先按大类判断，
+ * 以后新增同大类的具体型号时不需要改逻辑代码。
+ *
+ * 目前只实现 cannon（主炮）与 torpedo（鱼雷）；
+ * smoke / mine / depthCharge 只做类型占位，具体型号与行为留待后续实现。
+ */
+export type WeaponKind = "cannon" | "torpedo" | "smoke" | "mine" | "depthCharge";
+
+/** 具体武器型号 id：shell-主炮炮弹，torp-鱼雷。以后可继续增加具体型号。 */
 export type ProjectileType = "shell" | "torp";
 
 /** 发射者：只需要位置与速度，舰船和调试用的假发射平台都满足 */
@@ -38,8 +48,10 @@ export interface ArcFlight {
 
 /** 武器弹药 */
 export interface Projectile {
-  /** 弹药类型 */
+  /** 具体武器型号 id */
   type: ProjectileType;
+  /** 武器大类：通用逻辑只看它，不依赖具体型号 */
+  kind: WeaponKind;
   /** 发射者 */
   owner: ProjectileOwner;
   /** X坐标 */
@@ -62,6 +74,11 @@ export interface Projectile {
   trail: number[];
   /** 是否已标记为删除 */
   dead?: boolean;
+  /**
+   * 未命中淡出剩余比例：1 = 完全可见，0 = 完全消失。
+   * undefined 表示正常飞行；鱼雷到达最大射程后不再爆炸，而是靠它淡出。
+   */
+  fade?: number;
   /** 弹道参数（所有弹药都用曲线描述，弯曲度为 0 时即为直线） */
   arc: ArcFlight;
 }

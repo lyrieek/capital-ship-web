@@ -15,7 +15,13 @@
     "title": "Select Map",
     "subtitle": "Pick a battlefield to start; you can choose another map after the battle.",
     "fleetTitle": "Battle Fleet",
-    "fleetSubtitle": "Pick 3 ships per side; click a ship to swap. A ship can only fight for one team.",
+    "fleetSubtitle": "Pick {{size}} ships per side; click a ship to swap. A ship can only fight for one team.",
+    "fleetScale": "Fleet size",
+    "fleetScales": {
+      "skirmish": "Skirmish",
+      "battle": "Battle",
+      "decisive": "Decisive"
+    },
     "redFleet": "Red Fleet",
     "blueFleet": "Blue Fleet",
     "emptySlot": "Empty",
@@ -51,7 +57,7 @@
   },
   "hud": {
     "title": "2D Naval Battle · Auto Battle",
-    "weaponInfo": "Main Gun 10 DMG (arc · range 1100) · Torpedo 30 DMG ×3-5 · Dodge Turn 90°",
+    "weaponInfo": "Main Gun 10 DMG (arc · range 1100) · Torpedo 30 DMG ×3-5 (range 1600) · Dodge Turn 90°",
     "selectionHint": "Click to select · Shift multi-select · Right-click to move · F attacks nearest enemy (2.5s cooldown)",
     "winnerRed": "Red Victory",
     "winnerBlue": "Blue Victory",
@@ -177,6 +183,14 @@
     "title": "Weapon Debug",
     "controls": "Controls",
     "weapon": "Weapon",
+    "planned": "Planned Types",
+    "kind": {
+      "cannon": "Main Gun",
+      "torpedo": "Torpedo",
+      "smoke": "Smoke Screen",
+      "mine": "Sea Mine",
+      "depthCharge": "Depth Charge"
+    },
     "shell": "Main Gun (Shell)",
     "torp": "Torpedo",
     "fire": "Fire Settings",

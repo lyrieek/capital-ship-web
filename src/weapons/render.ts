@@ -6,7 +6,7 @@ import { getWeaponSpec, type WeaponId } from "./spec";
 import { createSpriteMaterial } from "./texture";
 import { createTorpedoTexture } from "./torpedo";
 import { sampleCurvePoints } from "./trajectory";
-import type { Projectile } from "./types";
+import type { Projectile, WeaponKind } from "./types";
 
 type LinesMesh = ReturnType<typeof MeshBuilder.CreateLines>;
 
@@ -55,10 +55,12 @@ interface RenderContext {
   alphaIndex: number;
 }
 
-/** 一种武器的 thin instance 批次：一个 Mesh + 一段矩阵缓冲 */
+/** 一种武器的 thin instance 批次：一个 Mesh + 矩阵缓冲 + 逐实例颜色（用于淡出） */
 interface ThinBatch {
   mesh: Mesh;
   buffer: Float32Array;
+  /** 逐实例 RGBA：未命中淡出时同时压暗颜色和透明度 */
+  colorBuffer: Float32Array;
   capacity: number;
 }
 
@@ -82,6 +84,8 @@ function syncPath(context: RenderContext, pool: LinesMesh[], projectile: Project
     pool[index] = mesh;
   }
   pool[index].setEnabled(true);
+  // 未命中的鱼雷进入淡出时，弹道预览也一起变淡
+  pool[index].alpha = 0.4 * (projectile.fade ?? 1);
   return index + 1;
 }
 
@@ -109,6 +113,8 @@ function syncTrail(context: RenderContext, pool: LinesMesh[], projectile: Projec
     pool[index] = mesh;
   }
   pool[index].setEnabled(true);
+  // 尾迹跟着弹体一起淡出，避免鱼雷消失后还留着一条亮线
+  pool[index].alpha = 0.5 * (projectile.fade ?? 1);
   return index + 1;
 }
 
@@ -126,7 +132,7 @@ export function createWeaponRender(options: WeaponRenderOptions): WeaponRender {
   let showPaths = options.showPaths ?? false;
   let showTrails = options.showTrails ?? false;
 
-  const materials = new Map<WeaponId, StandardMaterial>();
+  const materials = new Map<WeaponKind, StandardMaterial>();
   const textures: DynamicTexture[] = [];
   // 每种武器一个 thin instance 批次，弹量再多也只是一次 draw call
   const batches = new Map<WeaponId, ThinBatch>();
@@ -140,12 +146,14 @@ export function createWeaponRender(options: WeaponRenderOptions): WeaponRender {
   const tmpMatrix = new Matrix();
 
   function getMaterial(id: WeaponId): StandardMaterial {
-    const existing = materials.get(id);
+    // 贴图与材质按武器大类共享：以后同大类新增型号可以直接复用
+    const kind = getWeaponSpec(id).kind;
+    const existing = materials.get(kind);
     if (existing) return existing;
-    const texture = id === "shell" ? createCannonTexture(context.scene) : createTorpedoTexture(context.scene);
+    const texture = kind === "torpedo" ? createTorpedoTexture(context.scene) : createCannonTexture(context.scene);
     textures.push(texture);
-    const material = createSpriteMaterial(`${id}Material`, texture, context.scene);
-    materials.set(id, material);
+    const material = createSpriteMaterial(`${kind}Material`, texture, context.scene);
+    materials.set(kind, material);
     return material;
   }
 
@@ -160,9 +168,13 @@ export function createWeaponRender(options: WeaponRenderOptions): WeaponRender {
 
     const buffer = new Float32Array(capacity * 16);
     mesh.thinInstanceSetBuffer("matrix", buffer, 16, false);
+    // 未命中的鱼雷通过逐实例颜色淡出：RGB 压暗、A 降低透明度
+    const colorBuffer = new Float32Array(capacity * 4);
+    colorBuffer.fill(1);
+    mesh.thinInstanceSetBuffer("instanceColor", colorBuffer, 4, false);
     mesh.thinInstanceCount = 0;
 
-    const batch: ThinBatch = { mesh, buffer, capacity };
+    const batch: ThinBatch = { mesh, buffer, colorBuffer, capacity };
     batches.set(id, batch);
     return batch;
   }
@@ -172,11 +184,15 @@ export function createWeaponRender(options: WeaponRenderOptions): WeaponRender {
     if (!existing) return createBatch(id, Math.max(INITIAL_INSTANCE_CAPACITY, needed));
     if (needed <= existing.capacity) return existing;
 
-    // 弹量超过当前容量：换一段更大的矩阵缓冲
+    // 弹量超过当前容量：换一段更大的矩阵 / 颜色缓冲
     const capacity = Math.max(needed, existing.capacity * 2);
     const buffer = new Float32Array(capacity * 16);
     existing.mesh.thinInstanceSetBuffer("matrix", buffer, 16, false);
+    const colorBuffer = new Float32Array(capacity * 4);
+    colorBuffer.fill(1);
+    existing.mesh.thinInstanceSetBuffer("instanceColor", colorBuffer, 4, false);
     existing.buffer = buffer;
+    existing.colorBuffer = colorBuffer;
     existing.capacity = capacity;
     return existing;
   }
@@ -190,31 +206,44 @@ export function createWeaponRender(options: WeaponRenderOptions): WeaponRender {
     Quaternion.RotationYawPitchRollToRef(0, 0, angle, tmpRotation);
     Matrix.ComposeToRef(tmpScale, tmpRotation, tmpPosition, tmpMatrix);
     tmpMatrix.copyToArray(batch.buffer, index * 16);
+
+    // fade 为 undefined 时完全可见；淡出中同时压暗 RGB 和降低 alpha
+    const fade = projectile.fade ?? 1;
+    const colorOffset = index * 4;
+    batch.colorBuffer[colorOffset] = fade;
+    batch.colorBuffer[colorOffset + 1] = fade;
+    batch.colorBuffer[colorOffset + 2] = fade;
+    batch.colorBuffer[colorOffset + 3] = fade;
   }
 
   function sync(projectiles: Projectile[]): void {
-    const counts: Record<WeaponId, number> = { shell: 0, torp: 0 };
-    for (const projectile of projectiles) counts[projectile.type] += 1;
+    // 不写死具体型号：新增型号时这里会自动按 projectile.type 建批次
+    const counts = new Map<WeaponId, number>();
+    for (const projectile of projectiles) counts.set(projectile.type, (counts.get(projectile.type) ?? 0) + 1);
 
-    if (counts.shell > 0) ensureBatch("shell", counts.shell);
-    if (counts.torp > 0) ensureBatch("torp", counts.torp);
+    for (const [id, count] of counts) ensureBatch(id, count);
 
-    const cursor: Record<WeaponId, number> = { shell: 0, torp: 0 };
+    const cursor = new Map<WeaponId, number>();
     let pathIndex = 0;
     let trailIndex = 0;
 
     for (const projectile of projectiles) {
       const batch = batches.get(projectile.type);
-      if (batch) writeProjectile(batch, cursor[projectile.type]++, projectile);
+      const index = cursor.get(projectile.type) ?? 0;
+      if (batch) writeProjectile(batch, index, projectile);
+      cursor.set(projectile.type, index + 1);
 
       if (showPaths) pathIndex = syncPath(context, pathPool, projectile, pathIndex);
       if (showTrails) trailIndex = syncTrail(context, trailPool, projectile, trailIndex);
     }
 
     for (const [id, batch] of batches) {
-      const count = counts[id];
+      const count = counts.get(id) ?? 0;
       batch.mesh.thinInstanceCount = count;
-      if (count > 0) batch.mesh.thinInstanceBufferUpdated("matrix");
+      if (count > 0) {
+        batch.mesh.thinInstanceBufferUpdated("matrix");
+        batch.mesh.thinInstanceBufferUpdated("instanceColor");
+      }
     }
 
     for (; pathIndex < pathPool.length; pathIndex++) pathPool[pathIndex].setEnabled(false);

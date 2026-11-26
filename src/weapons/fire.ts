@@ -57,6 +57,20 @@ export function withinRange(from: Point, target: Point, range: number): boolean 
   return Math.hypot(target.x - from.x, target.y - from.y) <= range;
 }
 
+/**
+ * 把瞄准点收进最大射程内。
+ * 所有弹药在生成前都会经过这里，保证炮弹 / 鱼雷（以及以后的具体型号）
+ * 都不会被瞄准到射程之外，飞行距离由武器参数中的 range 统一限制。
+ */
+export function clampToRange(from: Point, target: Point, range: number): Point {
+  const dx = target.x - from.x;
+  const dy = target.y - from.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance <= range || distance <= 0.001) return target;
+  const scale = range / distance;
+  return { x: from.x + dx * scale, y: from.y + dy * scale };
+}
+
 /** 把落点限制在世界边界内 */
 export function clampToBounds(point: Point, bounds?: WorldBounds): Point {
   if (!bounds) return point;
@@ -84,6 +98,7 @@ function createProjectile(spec: WeaponSpec, owner: ProjectileOwner, from: Point,
   const tangent = curveTangent(curve, 0);
   return {
     type: spec.id,
+    kind: spec.kind,
     owner,
     x: from.x,
     y: from.y,
@@ -122,9 +137,11 @@ export function fireWeaponShot(id: WeaponId, owner: ProjectileOwner, from: Point
   const scatter = params.scatter ?? spec.scatter;
   const bend = params.bend ?? spec.bend;
   const shotIndex = params.shotIndex ?? 0;
-  // 目标点先限制在画面内，再叠加这一发的随机散布
-  const target = clampToBounds(aim, params.bounds);
-  const aimPoint = shotIndex < spec.accurateCount ? target : scatterPoint(target, scatter, random, params.bounds);
+  // 目标点先限制在画面内，再收进最大射程，最后叠加这一发的随机散布；
+  // 散布后的落点也再夹一次，保证任何一发都不会瞄到射程之外。
+  const target = clampToRange(from, clampToBounds(aim, params.bounds), spec.range);
+  const scattered = shotIndex < spec.accurateCount ? target : scatterPoint(target, scatter, random, params.bounds);
+  const aimPoint = clampToRange(from, scattered, spec.range);
   const angle = Math.atan2(aimPoint.y - from.y, aimPoint.x - from.x);
   const muzzle = muzzlePoint(from, angle, spec.muzzleOffset);
   params.onMuzzle?.(muzzle);

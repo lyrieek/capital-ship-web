@@ -24,7 +24,7 @@ function createShipByClass(cfg: ShipConfig): Ship {
   return new TorpedoBoat(cfg);
 }
 
-// 统一建船：缺省按阵营分配颜色，minX/maxX 默认无限制，由 RestrictArea 后续统一设置
+// 统一建船：缺省按阵营分配颜色，bounds 默认 null（不受限），由 RestrictArea 后续绑定
 export function createShip(cfg: ShipConfig): Ship {
   const team = cfg.team;
   const colors = TEAM_COLORS[team];

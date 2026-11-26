@@ -16,6 +16,9 @@ const TAU = Math.PI * 2;
 // 烟雾颜色表：与旧版 createSmoke 保持一致
 const SMOKE_COLORS = ["#475569", "#64748b", "#94a3b8"];
 
+// 水花颜色表：从白色到浅蓝，模拟浪花与飞沫
+const SPLASH_COLORS = ["#ffffff", "#e6f8ff", "#bde9ff"];
+
 // 逐粒子自定义状态：世界坐标、速度、生命。位置换算到场景坐标在 updateParticle 里做。
 interface FxParticleProps {
   x: number;
@@ -25,6 +28,12 @@ interface FxParticleProps {
   life: number;
   maxLife: number;
   size: number;
+  /** 重力加速度（世界像素/秒²，正值向下）；爆炸 / 烟雾为 0 */
+  gravity: number;
+  /** 阻尼系数（每秒）：水花用较小的阻尼，让飞沫能自然回落 */
+  drag: number;
+  /** 透明度倍率：水花外围的涟漪使用较低透明度 */
+  alpha: number;
 }
 
 // 不受光照影响的自发光精灵：贴图负责形状，顶点色负责颜色和淡出。
@@ -77,14 +86,32 @@ function ensureColor(particle: SolidParticle): Color4 {
   return particle.color;
 }
 
+// 可选运动参数：爆炸 / 烟雾保持旧默认值，水花按需覆盖
+interface ParticleMotion {
+  gravity?: number;
+  drag?: number;
+  alpha?: number;
+}
+
 // 激活一个池内粒子：写入世界坐标状态，并换算到场景坐标
-function activate(particle: SolidParticle, x: number, y: number, vx: number, vy: number, life: number, size: number, tint: Color4): void {
-  particle.props = { x, y, vx, vy, life, maxLife: life, size } satisfies FxParticleProps;
+function activate(
+  particle: SolidParticle,
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+  life: number,
+  size: number,
+  tint: Color4,
+  motion: ParticleMotion = {},
+): void {
+  const { gravity = 0, drag = DRAG, alpha = 1 } = motion;
+  particle.props = { x, y, vx, vy, life, maxLife: life, size, gravity, drag, alpha } satisfies FxParticleProps;
   const color = ensureColor(particle);
   color.r = tint.r;
   color.g = tint.g;
   color.b = tint.b;
-  color.a = 1;
+  color.a = alpha;
   particle.position.x = x - W / 2;
   particle.position.y = H / 2 - y;
   particle.position.z = 0;
@@ -108,6 +135,69 @@ function createFxMaterial(scene: Scene, texture: DynamicTexture): ShaderMaterial
   material.backFaceCulling = false;
   material.disableDepthWrite = true;
   return material;
+}
+
+// 落海水花：中间一束水柱 + 外围飞沫 + 贴水面的扩散涟漪，
+// 与陆地爆炸的径向迸发区分开。
+function createSplashSpawner(acquire: () => SolidParticle | null, tintOf: (hex: string) => Color4): (event: FxEvent) => void {
+  return (event: FxEvent): void => {
+    // 1) 中央水柱：少量较大的水团垂直向上喷起，再由重力拉回
+    for (let i = 0; i < 4; i++) {
+      const particle = acquire();
+      if (!particle) return;
+      activate(
+        particle,
+        event.x + Math.random() * 6 - 3,
+        event.y + Math.random() * 3 - 1.5,
+        Math.random() * 24 - 12,
+        -(240 + Math.random() * 160),
+        Math.random() * 0.35 + 0.55,
+        Math.random() * 2.2 + 3.2,
+        tintOf(event.color),
+        { gravity: 520, drag: 0.6 },
+      );
+    }
+
+    // 2) 外围飞沫：向斜上方散开，颜色在白色和浅蓝之间随机
+    for (let i = 0; i < event.count; i++) {
+      const particle = acquire();
+      if (!particle) return;
+      const angle = Math.random() * TAU;
+      const outward = 35 + Math.random() * 95;
+      const color = SPLASH_COLORS[Math.floor(Math.random() * SPLASH_COLORS.length)];
+      activate(
+        particle,
+        event.x + Math.cos(angle) * 3,
+        event.y + Math.sin(angle) * 2,
+        Math.cos(angle) * outward,
+        -(60 + Math.random() * 140),
+        Math.random() * 0.45 + 0.4,
+        Math.random() * 1.8 + 1.2,
+        tintOf(color),
+        { gravity: 480, drag: 0.9 },
+      );
+    }
+
+    // 3) 水面涟漪：沿水面快速向外扩散、低透明度淡出
+    const ripples = 10;
+    for (let i = 0; i < ripples; i++) {
+      const particle = acquire();
+      if (!particle) return;
+      const angle = (i / ripples) * TAU + Math.random() * 0.2;
+      const speed = 55 + Math.random() * 35;
+      activate(
+        particle,
+        event.x + Math.cos(angle) * 6,
+        event.y + Math.sin(angle) * 4,
+        Math.cos(angle) * speed,
+        Math.sin(angle) * speed * 0.55,
+        Math.random() * 0.2 + 0.45,
+        2.4,
+        tintOf("#9fdcff"),
+        { drag: 3.2, alpha: 0.45 },
+      );
+    }
+  };
 }
 
 /**
@@ -187,9 +277,11 @@ export function createParticleFx(scene: Scene, renderingGroupId: number): Partic
     }
   };
 
+  const spawnSplash = createSplashSpawner(acquire, tintOf);
+
   sps.initParticles = () => {
     for (const particle of sps.particles) {
-      particle.props = { x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1 } satisfies FxParticleProps;
+      particle.props = { x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, gravity: 0, drag: DRAG, alpha: 1 } satisfies FxParticleProps;
       particle.color = new Color4(0, 0, 0, 0);
       particle.scaling.setAll(0);
       particle.isVisible = false;
@@ -201,10 +293,13 @@ export function createParticleFx(scene: Scene, renderingGroupId: number): Partic
 
     const props = particle.props as FxParticleProps | null;
     if (!props) return particle;
+    // 先施加重力，再按各自阻尼衰减；爆炸 / 烟雾的 gravity 为 0，行为与旧版一致
+    props.vy += props.gravity * dt;
     props.x += props.vx * dt;
     props.y += props.vy * dt;
-    props.vx *= 1 - DRAG * dt;
-    props.vy *= 1 - DRAG * dt;
+    const damping = Math.max(0, 1 - props.drag * dt);
+    props.vx *= damping;
+    props.vy *= damping;
     props.life -= dt;
 
     if (props.life <= 0) {
@@ -219,7 +314,7 @@ export function createParticleFx(scene: Scene, renderingGroupId: number): Partic
     particle.position.y = H / 2 - props.y;
     particle.position.z = 0;
     particle.scaling.setAll(props.size * 2 * ratio);
-    ensureColor(particle).a = ratio;
+    ensureColor(particle).a = props.alpha * ratio;
     return particle;
   };
 
@@ -242,6 +337,7 @@ export function createParticleFx(scene: Scene, renderingGroupId: number): Partic
       dt = frameDt;
       for (const event of drainFxEvents()) {
         if (event.kind === "burst") spawnBurst(event);
+        else if (event.kind === "splash") spawnSplash(event);
         else spawnSmoke(event);
       }
       sps.setParticles();

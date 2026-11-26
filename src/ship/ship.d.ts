@@ -7,6 +7,18 @@ import type { ShipClassId } from "./ship-class";
 
 export type { ShipClassId } from "./ship-class";
 
+/**
+ * 轴对齐边界（世界像素坐标）。
+ * 由限制区（RestrictAreaImpl）实现并提供实时值，Ship 只持引用，
+ * 运动 / 碰撞层通过 shipBounds() 取「限制区 ∩ 世界边界」后的有效范围。
+ */
+export interface Bounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
 // 右键下达的航行目标（世界像素坐标）
 export interface SailOrder {
   x: number;
@@ -78,10 +90,9 @@ export interface Ship extends ShipConfig {
   torpedoSalvoMax: number;
   // 航向方向：1-右，-1-左
   dir: 1 | -1;
-  // 最小X坐标（左边界），由 RestrictArea 统一设置，缺省 -Infinity
-  minX: number;
-  // 最大X坐标（右边界），由 RestrictArea 统一设置，缺省 Infinity
-  maxX: number;
+  // 活动边界来源（限制区实例）；运行时实时读取，扩张自动生效；
+  // null 表示不受限制区约束，仅受世界边界约束（缺省）
+  bounds: Bounds | null;
   // 舰船亮侧颜色
   light: string;
   // 舰船暗侧颜色

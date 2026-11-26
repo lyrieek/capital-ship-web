@@ -3,7 +3,7 @@
 // 职责：
 //   1. 画限制区虚线框；
 //   2. 校验船是否越界、是否落在岛礁 / 建筑上；
-//   3. 把边界写回舰船，供移动 clamp 使用；
+//   3. 把自己绑定到舰船（ship.bounds），供移动 / 碰撞实时读取边界；
 //   4. 在限制区内自动摆船。
 //
 // 边界、阵营、出生点等静态数据由地图层 RestrictArea 统一校验并持有；
@@ -275,11 +275,10 @@ export class RestrictAreaImpl extends RestrictArea {
     return null;
   }
 
-  // 把边界写回舰船，供移动逻辑 clamp
-  applyTo(ship: Ship): void {
-    if (!this.enabled) return;
-    ship.minX = this.minX;
-    ship.maxX = this.maxX;
+  // 把本限制区绑定为船的活动边界来源。
+  // 船通过 ship.bounds 实时读取（扩张后自动生效），不再拷贝边界数值，也不会漏掉 Y 轴。
+  attach(ship: Ship): void {
+    ship.bounds = this.enabled ? this : null;
   }
 
   // 在本队集结带内随机找一个不被地物占用的点。
@@ -351,7 +350,7 @@ export class RestrictAreaImpl extends RestrictArea {
     }
     const error = this.validate(ship);
     if (error) throw new Error(error);
-    this.applyTo(ship);
+    this.attach(ship);
     return ship;
   }
 

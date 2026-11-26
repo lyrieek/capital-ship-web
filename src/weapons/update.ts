@@ -3,6 +3,9 @@ import { curveTangent, sampleCurve } from "./trajectory";
 import type { TerrainField } from "../terrain/field";
 import type { Projectile, ProjectileTarget } from "./types";
 
+/** 鱼雷未命中后的淡出时长（秒）：缓慢变暗变透明，而不是直接爆炸消失 */
+const TORPEDO_FADE_TIME = 1.4;
+
 /** 弹药更新参数 */
 export interface ProjectileUpdateOptions {
   /** 弹药列表（原地更新，死亡的会被移除） */
@@ -19,7 +22,7 @@ export interface ProjectileUpdateOptions {
   onHit?: (projectile: Projectile, target: ProjectileTarget, x: number, y: number) => void;
   /** 撞上地形回调 */
   onTerrainHit?: (projectile: Projectile, x: number, y: number) => void;
-  /** 落水回调：弹药耗尽射程或飞出战场（没有命中目标） */
+  /** 落水回调：炮弹耗尽射程或飞出战场；鱼雷未命中会淡出，不触发此回调 */
   onLanded?: (projectile: Projectile, x: number, y: number) => void;
 }
 
@@ -65,6 +68,21 @@ export function updateProjectiles(dt: number, options: ProjectileUpdateOptions):
   const alive: Projectile[] = [];
 
   for (const projectile of projectiles) {
+    // 正在淡出的弹药只做视觉收尾：不再判定命中或地形，
+    // 推进速度随 fade 线性衰减，让鱼雷在变暗变透明的过程中慢慢停下。
+    if (projectile.fade !== undefined) {
+      advance(projectile, dt * projectile.fade);
+      projectile.trail.push(projectile.x, projectile.y);
+      if (projectile.trail.length > 24) projectile.trail.splice(0, 2);
+      projectile.fade = Math.max(0, projectile.fade - dt / TORPEDO_FADE_TIME);
+      if (projectile.fade <= 0) {
+        projectile.dead = true;
+        continue;
+      }
+      alive.push(projectile);
+      continue;
+    }
+
     advance(projectile, dt);
 
     projectile.trail.push(projectile.x, projectile.y);
@@ -73,14 +91,25 @@ export function updateProjectiles(dt: number, options: ProjectileUpdateOptions):
     // 飞出战场 = 落海；寿命耗尽 = 飞到射程边缘
     const splashed = projectile.x < -60 || projectile.x > worldWidth || projectile.y < -60 || projectile.y > worldHeight;
     if (projectile.life <= 0 || splashed) {
+      // 鱼雷没命中：不爆炸、不溅水花，进入淡出后自然消失；飞出战场的直接移除
+      if (projectile.kind === "torpedo") {
+        if (splashed) {
+          projectile.dead = true;
+        } else {
+          projectile.fade = 1;
+          projectile.life = 0;
+          alive.push(projectile);
+        }
+        continue;
+      }
       projectile.dead = true;
       options.onLanded?.(projectile, projectile.x, projectile.y);
       continue;
     }
 
-    // 只有鱼雷会被岛礁挡住：鱼雷在水面航行，撞上陆地就爆炸。
-    // 炮弹是曲射火力，从岛屿上方飞过，不应该被地形拦截。
-    if (projectile.type === "torp" && field && field.isBlockedCircle(projectile.x, projectile.y, projectile.r)) {
+    // 只有鱼雷类武器会被岛礁挡住：鱼雷在水面航行，撞上陆地就爆炸。
+    // 主炮炮弹是曲射火力，从岛屿上方飞过，不应该被地形拦截。
+    if (projectile.kind === "torpedo" && field && field.isBlockedCircle(projectile.x, projectile.y, projectile.r)) {
       projectile.dead = true;
       options.onTerrainHit?.(projectile, projectile.x, projectile.y);
       continue;

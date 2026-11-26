@@ -5,10 +5,13 @@ import {
   clampToBounds,
   createWeaponRender,
   fireWeapon,
+  getWeaponKindSpec,
   getWeaponSpec,
+  isWeaponKindImplemented,
   paintLauncherPlatform,
   updateProjectiles,
   WEAPON_IDS,
+  WEAPON_KIND_IDS,
   type Projectile,
   type WeaponId,
   type WeaponRender,
@@ -29,6 +32,8 @@ const MARKER_LIFE = 1.6;
 // 齐射数量输入范围
 const SALVO_MIN = 1;
 const SALVO_MAX = 50;
+// 只占位、尚未实现的武器大类：在调试页里以禁用项展示，方便后续补齐
+const PLANNED_WEAPON_KINDS = WEAPON_KIND_IDS.filter((kind) => !isWeaponKindImplemented(kind));
 
 function launcherPoint(viewport: PlaygroundViewport): { x: number; y: number } {
   return { x: viewport.width * LAUNCHER_X_RATIO, y: viewport.height * LAUNCHER_Y_RATIO };
@@ -114,6 +119,26 @@ function paintMarker(ctx: CanvasRenderingContext2D, width: number, height: numbe
   ctx.stroke();
 }
 
+// 绘制落海水花：由内向外扩散的同心涟漪，不再使用陆地上的准星图案
+function paintRipple(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  ctx.clearRect(0, 0, width, height);
+  const cx = width / 2;
+  const cy = height / 2;
+  for (const [radius, alpha, lineWidth] of [
+    [0.16, 0.95, 3],
+    [0.3, 0.6, 2],
+    [0.42, 0.3, 1.4],
+  ] as const) {
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, width * radius, height * radius * 0.62, 0, 0, TAU);
+    ctx.strokeStyle = "#ffffff";
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 // 绘制鼠标瞄准标记
 function paintAim(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   ctx.clearRect(0, 0, width, height);
@@ -140,18 +165,34 @@ function createLauncherMesh(scene: Scene, weapon: WeaponId, viewport: Playground
   return mesh;
 }
 
+// 单个落点位置的两种标记：普通落点（准星）与落海水花（涟漪）
+interface MarkerMesh {
+  shot: PlaneMesh;
+  splash: PlaneMesh;
+}
+
 // 落点标记池
-function createMarkerPool(scene: Scene): PlaneMesh[] {
-  const texture = new DynamicTexture("markerTexture", { width: 48, height: 48 }, scene, true);
-  paintMarker(toCanvas2D(texture), 48, 48);
-  texture.update();
-  const pool: PlaneMesh[] = [];
+function createMarkerPool(scene: Scene): MarkerMesh[] {
+  const markerTexture = new DynamicTexture("markerTexture", { width: 48, height: 48 }, scene, true);
+  paintMarker(toCanvas2D(markerTexture), 48, 48);
+  markerTexture.update();
+  const rippleTexture = new DynamicTexture("rippleTexture", { width: 48, height: 48 }, scene, true);
+  paintRipple(toCanvas2D(rippleTexture), 48, 48);
+  rippleTexture.update();
+
+  const pool: MarkerMesh[] = [];
   for (let i = 0; i < MARKER_COUNT; i++) {
-    const mesh = createPlane(`marker_${i}`, 26, 26, scene);
-    mesh.material = createSpriteMaterial(`markerMaterial_${i}`, texture, scene);
-    mesh.isPickable = false;
-    mesh.setEnabled(false);
-    pool.push(mesh);
+    const shot = createPlane(`marker_${i}`, 26, 26, scene);
+    shot.material = createSpriteMaterial(`markerMaterial_${i}`, markerTexture, scene);
+    shot.isPickable = false;
+    shot.setEnabled(false);
+
+    const splash = createPlane(`ripple_${i}`, 26, 26, scene);
+    splash.material = createSpriteMaterial(`rippleMaterial_${i}`, rippleTexture, scene);
+    splash.isPickable = false;
+    splash.setEnabled(false);
+
+    pool.push({ shot, splash });
   }
   return pool;
 }
@@ -169,26 +210,25 @@ function createAimMesh(scene: Scene): ReturnType<typeof createPlane> {
 }
 
 // 更新落点标记的显示与淡出
-function updateMarkers(pool: PlaneMesh[], markers: ShotMarker[], now: number, viewport: PlaygroundViewport): void {
+function updateMarkers(pool: MarkerMesh[], markers: ShotMarker[], now: number, viewport: PlaygroundViewport): void {
   for (let i = 0; i < pool.length; i++) {
-    const mesh = pool[i];
+    const entry = pool[i];
+    entry.shot.setEnabled(false);
+    entry.splash.setEnabled(false);
+
     const marker = markers[i];
-    if (!marker) {
-      mesh.setEnabled(false);
-      continue;
-    }
+    if (!marker) continue;
     const age = now - marker.born;
-    if (age > MARKER_LIFE) {
-      mesh.setEnabled(false);
-      continue;
-    }
+    if (age > MARKER_LIFE) continue;
+
+    const isSplash = marker.kind === "splash";
+    const mesh = isSplash ? entry.splash : entry.shot;
     mesh.setEnabled(true);
     mesh.position.copyFrom(playgroundToScene(marker.x, marker.y, viewport));
     const material = mesh.material as StandardMaterial;
-    material.emissiveColor = Color3.FromHexString(marker.kind === "splash" ? MARKER_SPLASH_COLOR : MARKER_SHOT_COLOR);
+    material.emissiveColor = Color3.FromHexString(isSplash ? MARKER_SPLASH_COLOR : MARKER_SHOT_COLOR);
     // 落海水花会扩散变大，普通落点标记保持原样
-    const scale = marker.kind === "splash" ? 0.6 + (age / MARKER_LIFE) * 1.6 : 1;
-    mesh.scaling.setAll(scale);
+    mesh.scaling.setAll(isSplash ? 0.6 + (age / MARKER_LIFE) * 1.6 : 1);
     material.alpha = Math.max(0, 1 - age / MARKER_LIFE);
   }
 }
@@ -255,7 +295,7 @@ function useWeaponsDebug(viewport: PlaygroundViewport | null): WeaponsDebug {
     const id = weaponRef.current;
     const projectiles = fireWeapon(id, { ...from, vx: 0, vy: 0 }, from, aim, {
       salvo: salvoRef.current,
-      bend: id === "shell" ? bendRef.current : 0,
+      bend: getWeaponSpec(id).kind === "cannon" ? bendRef.current : 0,
       bounds,
     });
     for (const projectile of projectiles) projectilesRef.current.push(projectile);
@@ -385,6 +425,15 @@ function WeaponsControls({ state, actions }: { state: WeaponsState; actions: Wea
             </label>
           );
         })}
+      </fieldset>
+      <fieldset>
+        <legend>{t("weapons.planned")}</legend>
+        {PLANNED_WEAPON_KINDS.map((kind) => (
+          <label key={kind} className="weapons-planned">
+            <input type="checkbox" disabled />
+            {t(getWeaponKindSpec(kind).nameKey)}
+          </label>
+        ))}
       </fieldset>
       <fieldset>
         <legend>{t("weapons.fire")}</legend>

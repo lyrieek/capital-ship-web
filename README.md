@@ -71,7 +71,7 @@ pnpm lint      # 格式检查和 Oxlint
 - `src/game/world.ts`：世界尺寸、视口尺寸和性能平衡区间说明。
 - `src/game/camera-focus.ts`：大地图相机跟随、minimap 跳转和屏幕/世界坐标换算。
 - `src/game/utils.ts`：舰船移动、转向、规避等参数 `P`。
-- `src/weapons/spec.ts`：主炮和鱼雷的伤害、射程、速度、冷却等武器参数。
+- `src/weapons/spec.ts`：武器大类（主炮 / 鱼雷 / 烟雾弹 / 水雷 / 深水炸弹）与具体型号参数；目前只实现主炮和鱼雷，所有弹药都有最大射程。
 - `src/ship/index.ts`：舰船模块出口；`src/ship/ship-class.ts`：鱼雷艇 / 护卫舰的舰种参数表；`src/ship/classes/`：具体舰种类。
 - `src/ship/action/`：行动模式抽象（`ActionMode`）与小型舰环绕炮战实现。
 - `src/ship/locomotion.ts`：行动模式 / 手动指令共用的转向、加减速、地形避让与边界处理。

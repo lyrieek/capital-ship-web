@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Button, Control, Grid, Rectangle, StackPanel, TextBlock } from "@babylonjs/gui";
 import { useTranslation } from "react-i18next";
@@ -25,6 +25,13 @@ const DEATH_FONT_SIZE = 15;
 
 type TextAlign = "left" | "center" | "right";
 type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+type SortState = { kind: "default" } | { kind: "asc"; column: number } | { kind: "desc"; column: number };
+
+interface RowWithScore {
+  row: ShipBattleRecord;
+  score: ScoreResult;
+}
 
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
@@ -202,17 +209,107 @@ function makeRestartButton(name: string, label: string): { button: Button; label
   return { button, labelBlock };
 }
 
-function createResultsGrid(results: readonly ShipBattleRecord[], t: Translate, scoreResults: readonly ScoreResult[]): Grid {
+function toggleSort(sort: SortState, column: number): SortState {
+  if (sort.kind === "asc" && sort.column === column) return { kind: "desc", column };
+  if (sort.kind === "desc" && sort.column === column) return { kind: "default" };
+  return { kind: "asc", column };
+}
+
+function sortIndicator(sort: SortState, column: number): string {
+  if (sort.kind === "default") return column === 4 ? "▼" : "";
+  return sort.column === column ? (sort.kind === "asc" ? "▲" : "▼") : "";
+}
+
+function compareByColumn(a: RowWithScore, b: RowWithScore, column: number): number {
+  switch (column) {
+    case 0: {
+      return a.row.team.localeCompare(b.row.team);
+    }
+    case 1: {
+      return a.row.name.localeCompare(b.row.name);
+    }
+    case 2: {
+      return a.row.survivalTime - b.row.survivalTime;
+    }
+    case 3: {
+      return a.row.kills - b.row.kills;
+    }
+    case 4: {
+      return a.score.score - b.score.score;
+    }
+    case 5: {
+      return (b.row.alive ? 1 : 0) - (a.row.alive ? 1 : 0) || (a.row.death?.killerName ?? "").localeCompare(b.row.death?.killerName ?? "");
+    }
+    default: {
+      return 0;
+    }
+  }
+}
+
+function sortRows(
+  results: readonly ShipBattleRecord[],
+  scoreResults: readonly ScoreResult[],
+  sort: SortState,
+): { results: ShipBattleRecord[]; scoreResults: ScoreResult[] } {
+  const paired = results.map((row, index) => ({ row, score: scoreResults[index] }));
+  if (sort.kind === "default") {
+    paired.sort((a, b) => b.score.score - a.score.score || a.row.name.localeCompare(b.row.name));
+  } else {
+    const dir = sort.kind === "asc" ? 1 : -1;
+    paired.sort((a, b) => dir * compareByColumn(a, b, sort.column) || a.row.name.localeCompare(b.row.name));
+  }
+  return {
+    results: paired.map((p) => p.row),
+    scoreResults: paired.map((p) => p.score),
+  };
+}
+
+function makeSortableHeaderCell(
+  name: string,
+  text: string,
+  color: string,
+  fontSize: number,
+  fontWeight: string,
+  align: TextAlign,
+  onClick: () => void,
+): Control {
+  const panel = new StackPanel(name);
+  panel.isVertical = false;
+  panel.width = "100%";
+  panel.height = "100%";
+  panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+  panel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+  panel.isPointerBlocker = true;
+  panel.hoverCursor = "pointer";
+  panel.onPointerUpObservable.add(() => onClick());
+
+  const block = makeText(`${name}_text`, text, color, fontSize, fontWeight);
+  block.width = "100%";
+  block.height = "100%";
+  alignText(block, align);
+  panel.addControl(block);
+
+  return panel;
+}
+
+function createResultsGrid(
+  results: readonly ShipBattleRecord[],
+  t: Translate,
+  scoreResults: readonly ScoreResult[],
+  sort: SortState,
+  onHeaderClick: (column: number) => void,
+): Grid {
+  const { results: sortedResults, scoreResults: sortedScores } = sortRows(results, scoreResults, sort);
   const grid = new Grid("battleResultGrid");
   grid.width = "100%";
-  grid.height = `${HEADER_ROW_HEIGHT + results.length * ROW_HEIGHT}px`;
+  grid.height = `${HEADER_ROW_HEIGHT + sortedResults.length * ROW_HEIGHT}px`;
 
   // 阵营 / 舰船 / 存活时间 / 杀敌数 / 积分 / 死亡原因
   for (const weight of [0.8, 1.2, 1.0, 0.7, 0.8, 3.0]) {
     grid.addColumnDefinition(weight);
   }
   grid.addRowDefinition(HEADER_ROW_HEIGHT, true);
-  results.forEach(() => {
+  sortedResults.forEach(() => {
     grid.addRowDefinition(ROW_HEIGHT, true);
   });
 
@@ -225,14 +322,26 @@ function createResultsGrid(results: readonly ShipBattleRecord[], t: Translate, s
     t("battleRecord.deathReason"),
   ];
   headers.forEach((text, column) => {
-    grid.addControl(makeCell(`battleResultHeader_${column}`, text, "rgba(154,196,224,0.78)", HEADER_FONT_SIZE, "600"), 0, column);
+    // 舰船 / 死亡原因两列正文左对齐，表头跟随
+    const align: TextAlign = column === 1 || column === 5 ? "left" : "center";
+    const indicator = sortIndicator(sort, column);
+    const label = indicator ? `${text} ${indicator}` : text;
+    const isSorted = (sort.kind === "asc" || sort.kind === "desc") && sort.column === column;
+    const fontWeight = isSorted || (sort.kind === "default" && column === 4) ? "700" : "600";
+    grid.addControl(
+      makeSortableHeaderCell(`battleResultHeader_${column}`, label, "rgba(154,196,224,0.78)", HEADER_FONT_SIZE, fontWeight, align, () =>
+        onHeaderClick(column),
+      ),
+      0,
+      column,
+    );
   });
 
-  results.forEach((row, index) => {
+  sortedResults.forEach((row, index) => {
     const rowIndex = index + 1;
     const teamColor = MAP_TEAM_COLORS[row.team];
     const team = t(row.team === "red" ? "battleRecord.teams.red" : "battleRecord.teams.blue");
-    const scoreResult = scoreResults[index];
+    const scoreResult = sortedScores[index];
     const cells: [string, string, TextAlign, number][] = [
       [team, teamColor, "center", TABLE_FONT_SIZE],
       [shipLabel(row.name, row.nameKey, t), "#d9ecfa", "left", SHIP_FONT_SIZE],
@@ -285,6 +394,8 @@ export default function BattleResult({
   const { t } = useTranslation();
   const id = useId();
   const latestRef = useRef({ onRestart });
+  const [sort, setSort] = useState<SortState>({ kind: "default" });
+  const onHeaderClick = useCallback((column: number) => setSort((prev) => toggleSort(prev, column)), []);
   const backdropRef = useRef<Rectangle | null>(null);
   const panelRef = useRef<Rectangle | null>(null);
   const titleRef = useRef<TextBlock | null>(null);
@@ -432,8 +543,8 @@ export default function BattleResult({
 
     tableHost.clearControls();
     tableHost.height = `${HEADER_ROW_HEIGHT + results.length * ROW_HEIGHT + TABLE_PADDING * 2}px`;
-    tableHost.addControl(createResultsGrid(results, t, scoreResults));
-  }, [scene, open, title, titleColor, subtitle, winnerTeam, results, t]);
+    tableHost.addControl(createResultsGrid(results, t, scoreResults, sort, onHeaderClick));
+  }, [scene, open, title, titleColor, subtitle, winnerTeam, results, t, sort]);
 
   return null;
 }

@@ -9,10 +9,10 @@ import { H, W } from "../game/utils";
 import { screenToWorld, setCameraFocus } from "../game/camera-focus";
 import { issueSelectionSail } from "../game/movement";
 import { bindAttackKey, bindPointerInput, ShipSelection } from "../game/selection";
-import { createBabylonScene, worldToScene } from "../babylon";
+import { createBabylonScene } from "../babylon";
 import { createShipHudLayer, type ShipHudLayer } from "../ship/hud";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
-import { createShipVisual, disposeNavLine, type ShipVisual, updateShipNavigationLine } from "../ship/render-visual";
+import { createShipVisual, syncShipVisual, type ShipVisual } from "../ship/render-visual";
 import { playgroundWorldView, resizePlaygroundScene, usePlaygroundViewport, type PlaygroundViewport } from "./viewport";
 import Model from "../components/Model";
 import "./playground.css";
@@ -80,36 +80,6 @@ const createShips = (): Ship[] => [
     dir: -1,
   }),
 ];
-
-// 把舰船状态同步到 Babylon 可视对象（位置 / 朝向 / 命中闪白 / 血条）
-function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean, scene: Scene): void {
-  const alive = ship.alive;
-  visual.mesh.setEnabled(alive);
-  visual.hud.setVisible(alive);
-  visual.ring.mesh.setEnabled(alive && selected);
-  if (!alive) {
-    // 船已阵亡：导航虚线必须一起清掉，否则会残留在海面上
-    disposeNavLine(visual);
-    return;
-  }
-
-  // 航行导航虚线：仅选中且有航行目标时显示，每帧重新计算不残留旧点
-  if (selected) {
-    updateShipNavigationLine(visual, ship, scene);
-  } else {
-    disposeNavLine(visual);
-  }
-
-  visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
-  visual.mesh.rotation.z = -ship.angle;
-  visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
-
-  const flash = 1 + ship.hitFlash * 0.9;
-  visual.material.emissiveColor.set(flash, flash, flash);
-  visual.turretMaterial.emissiveColor.set(flash, flash, flash);
-
-  visual.hud.sync(ship);
-}
 
 // 调试页只演示巡航与右键航行，不触发武器逻辑
 function stepShip(ship: Ship, dt: number): void {
@@ -227,14 +197,14 @@ function useShipScene(
 
     for (const ship of shipsRef.current) {
       // 先验证船位置是否在限制区内（在画船之前），不在则拒绝画并记录错误供 modal 显示；
-      // 然后将限制区边界应用到船上（供碰撞 clamp 使用）
+      // 然后把限制区绑定到船上（ship.bounds，供移动 / 碰撞实时读取 X/Y 边界）
       const area = restrictAreas.find((a) => a.team === ship.team);
       const err = area?.validate(ship);
       if (err) {
         setRestrictError(err);
         continue;
       }
-      area?.applyTo(ship);
+      area?.attach(ship);
 
       // 创建舰船本体 + 头顶 HUD + 选中圈
       const visual = createShipVisual(ship, scene, hudLayer, shipSize);

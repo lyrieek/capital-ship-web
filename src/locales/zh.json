@@ -15,7 +15,13 @@
     "title": "选择地图",
     "subtitle": "选择一张战场开始战斗；战斗结束后可以重新选图。",
     "fleetTitle": "出战舰队",
-    "fleetSubtitle": "红蓝双方各选 3 艘舰船；点击舰船可以更换，同一艘船只能加入一方。",
+    "fleetSubtitle": "红蓝双方各选 {{size}} 艘舰船；点击舰船可以更换，同一艘船只能加入一方。",
+    "fleetScale": "舰队规模",
+    "fleetScales": {
+      "skirmish": "速战",
+      "battle": "会战",
+      "decisive": "决战"
+    },
     "redFleet": "红方舰队",
     "blueFleet": "蓝方舰队",
     "emptySlot": "待选",
@@ -51,7 +57,7 @@
   },
   "hud": {
     "title": "2D 海战 · 自动对战",
-    "weaponInfo": "主炮 10 伤害（曲射 · 射程 1100） · 鱼雷 30 伤害 ×3~5 · 规避转体 90°",
+    "weaponInfo": "主炮 10 伤害（曲射 · 射程 1100） · 鱼雷 30 伤害 ×3~5（射程 1600） · 规避转体 90°",
     "selectionHint": "左键选择舰船 · Shift 多选 · 右键移动 · F 攻击最近敌舰（2.5 秒冷却）",
     "winnerRed": "红方胜利",
     "winnerBlue": "蓝方胜利",
@@ -178,6 +184,14 @@
     "title": "武器调试",
     "controls": "控制面板",
     "weapon": "武器类型",
+    "planned": "未实现类型",
+    "kind": {
+      "cannon": "主炮",
+      "torpedo": "鱼雷",
+      "smoke": "烟雾弹",
+      "mine": "水雷",
+      "depthCharge": "深水炸弹"
+    },
     "shell": "主炮（炮弹）",
     "torp": "鱼雷",
     "fire": "开火设置",

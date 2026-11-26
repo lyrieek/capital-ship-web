@@ -1,6 +1,7 @@
 // 右键航行指令：先转向目标点，再沿航向行驶，到达后恢复行动模式。
 import type { Ship } from "../ship/ship";
-import { clamp, P } from "./utils";
+import { shipBounds } from "../ship/bounds";
+import { clamp } from "./utils";
 import { driveShip, resetDriveMemory } from "../ship/locomotion";
 
 // 进入这个距离后视为到达目标点
@@ -8,8 +9,9 @@ export const ARRIVE_RADIUS = 6;
 
 // 给单艘舰船下达航行指令
 export function issueSailOrder(ship: Ship, x: number, y: number): void {
-  const targetY = clamp(y, P.yMin, P.yMax);
-  ship.order = { x: clamp(x, ship.minX, ship.maxX), y: targetY };
+  const bounds = shipBounds(ship);
+  const targetY = clamp(y, bounds.minY, bounds.maxY);
+  ship.order = { x: clamp(x, bounds.minX, bounds.maxX), y: targetY };
   // 到达后以新的航线继续巡航
   ship.baseY = targetY;
   // 手动指令覆盖当前的规避/回正状态，并重置行动模式的内部状态；

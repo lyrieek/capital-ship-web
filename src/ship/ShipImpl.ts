@@ -1,4 +1,5 @@
-import type { Ship, ShipConfig, SailOrder, ThreatItem, ShipClassId, TorpedoVolley } from "./ship";
+import type { Ship, ShipConfig, SailOrder, ThreatItem, ShipClassId, TorpedoVolley, Bounds } from "./ship";
+import { shipBounds } from "./bounds";
 import { P, rand, clamp, angleDiff, approachAngle } from "../game/utils";
 import { updateSailOrder } from "../game/movement";
 import { getGameInstance } from "../game/Game";
@@ -13,8 +14,9 @@ import { DefaultEvasionBehavior, type EvasionBehavior } from "./evasion";
 // 行动模式抽象 + 统一运动执行层
 import { createDefaultActionMode, type ActionMode } from "./action";
 import { driveShip } from "./locomotion";
-export type { Ship, ShipConfig, SailOrder, ThreatItem, ShipClassId, TorpedoVolley } from "./ship";
+export type { Ship, ShipConfig, SailOrder, ThreatItem, ShipClassId, TorpedoVolley, Bounds } from "./ship";
 export { createShip, getTeamColors } from "./create-ship";
+export { shipBounds } from "./bounds";
 
 const CANNON = getWeaponSpec("shell");
 const TORPEDO = getWeaponSpec("torp");
@@ -53,8 +55,7 @@ interface GunVolley {
 export class ShipImpl implements Ship {
   x: number;
   y: number;
-  minX: number;
-  maxX: number;
+  bounds: Bounds | null;
   dir: 1 | -1;
   hp: number;
   maxHp: number;
@@ -113,9 +114,8 @@ export class ShipImpl implements Ship {
 
     this.x = cfg.x ?? 0;
     this.y = cfg.y ?? 0;
-    // 行动限制区由 RestrictArea 类统一设置，船本身缺省无限制
-    this.minX = -Infinity;
-    this.maxX = Infinity;
+    // 活动边界由 RestrictArea 通过 ship.bounds 绑定；缺省 null 表示不受限制区约束，仅受世界边界约束
+    this.bounds = null;
     this.dir = cfg.dir ?? 1;
     this.hp = spec.maxHp;
     this.maxHp = spec.maxHp;
@@ -200,8 +200,8 @@ export class ShipImpl implements Ship {
     for (const p of game.projectiles) {
       // 跳过自身发射的弹药
       if (p.owner === this) continue;
-      // 只有鱼雷才需要规避
-      if (p.type !== "torp") continue;
+      // 只有仍在正常飞行的鱼雷才需要规避；正在淡出的鱼雷已经不会造成伤害
+      if (p.kind !== "torpedo" || p.fade !== undefined) continue;
 
       const rx = this.x - p.x,
         ry = this.y - p.y;
@@ -290,7 +290,8 @@ export class ShipImpl implements Ship {
         // 不再横着平移，看起来像一次真正的急转脱离。
         const px = this.x;
         const py = this.y;
-        const targetY = clamp(this.baseY + this.evasionSide * this.evasionAmplitude, P.yMin, P.yMax);
+        const bounds = shipBounds(this);
+        const targetY = clamp(this.baseY + this.evasionSide * this.evasionAmplitude, bounds.minY, bounds.maxY);
         const remainY = targetY - this.y;
         // 世界坐标航向：X 分量跟随前进方向，Y 分量指向规避侧，两者合成明确的斜向脱离角。
         // 横移到位后转回水平航向（对应横向模型里的鱼雷航向），保持 Y 不再漂移。
@@ -303,16 +304,16 @@ export class ShipImpl implements Ship {
         this.x += Math.cos(this.angle) * step;
         this.y += Math.sin(this.angle) * step;
         // 左右越界反弹并更新 dir / baseAngle；上下只做夹取
-        if (this.x < this.minX) {
-          this.x = this.minX;
+        if (this.x < bounds.minX) {
+          this.x = bounds.minX;
           this.dir = 1;
           this.baseAngle = 0;
-        } else if (this.x > this.maxX) {
-          this.x = this.maxX;
+        } else if (this.x > bounds.maxX) {
+          this.x = bounds.maxX;
           this.dir = -1;
           this.baseAngle = Math.PI;
         }
-        this.y = clamp(this.y, P.yMin, P.yMax);
+        this.y = clamp(this.y, bounds.minY, bounds.maxY);
 
         this.evasionT += dt;
         // 规避时间到但鱼雷仍在来袭，继续规避，避免过早回正撞上雷
@@ -364,17 +365,19 @@ export class ShipImpl implements Ship {
 
   // 沿当前 dir 前进并处理左右边界反弹（回正阶段沿用 X 轴运动；规避阶段已改为按船头航向位移）
   private moveForward(distance: number): void {
+    const bounds = shipBounds(this);
     this.x += this.dir * distance;
-    if (this.x < this.minX) {
-      this.x = this.minX;
+    if (this.x < bounds.minX) {
+      this.x = bounds.minX;
       this.dir = 1;
       this.baseAngle = 0;
     }
-    if (this.x > this.maxX) {
-      this.x = this.maxX;
+    if (this.x > bounds.maxX) {
+      this.x = bounds.maxX;
       this.dir = -1;
       this.baseAngle = Math.PI;
     }
+    this.y = clamp(this.y, bounds.minY, bounds.maxY);
   }
 
   // 炮管对准指定角度才算瞄准完成

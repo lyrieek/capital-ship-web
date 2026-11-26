@@ -2,6 +2,7 @@
 // 不 import Babylon：模拟可以在固定步长 / 回放 / 服务端里独立运行。
 import { terrainRadius, type TerrainField } from "../terrain/field";
 import type { Ship } from "../ship/ship";
+import { shipBounds } from "../ship/bounds";
 import { P, clamp } from "./utils";
 
 /**
@@ -86,8 +87,9 @@ export function resolveCollisions(ships: readonly Ship[], field: TerrainField | 
   }
 
   for (const ship of alive) {
-    if (ship.minX !== -Infinity) ship.x = Math.max(ship.minX, ship.x);
-    if (ship.maxX !== Infinity) ship.x = Math.min(ship.maxX, ship.x);
-    ship.y = clamp(ship.y, P.yMin, P.yMax);
+    // 有效边界 = 限制区 ∩ 世界：X/Y 一起夹取，避免只限制横向、纵向可穿出限制区
+    const bounds = shipBounds(ship);
+    ship.x = clamp(ship.x, bounds.minX, bounds.maxX);
+    ship.y = clamp(ship.y, bounds.minY, bounds.maxY);
   }
 }

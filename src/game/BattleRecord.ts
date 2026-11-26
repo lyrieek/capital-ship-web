@@ -164,15 +164,17 @@ export class BattleRecord {
     const victimEntry = this.entries.find((entry) => entry.ship === victim);
     if (!victimEntry) return;
     victimEntry.damageTaken += dmg;
-    if (weapon === "shell") victimEntry.shellHitsTaken += 1;
-    else if (weapon === "torp") victimEntry.torpHitsTaken += 1;
+    // 按武器大类统计：以后新增同大类的具体型号也会归到对应的命中数里
+    const kind = getWeaponSpec(weapon).kind;
+    if (kind === "cannon") victimEntry.shellHitsTaken += 1;
+    else if (kind === "torpedo") victimEntry.torpHitsTaken += 1;
 
     if (!attacker || attacker === victim) return;
     const attackerEntry = this.entries.find((entry) => entry.ship === attacker);
     if (!attackerEntry) return;
     attackerEntry.damageDealt += dmg;
-    if (weapon === "shell") attackerEntry.shellHitsDealt += 1;
-    else if (weapon === "torp") attackerEntry.torpHitsDealt += 1;
+    if (kind === "cannon") attackerEntry.shellHitsDealt += 1;
+    else if (kind === "torpedo") attackerEntry.torpHitsDealt += 1;
     if (attackerEntry.team === victimEntry.team) {
       attackerEntry.friendlyFireHits += 1;
       attackerEntry.friendlyFireDamage += dmg;

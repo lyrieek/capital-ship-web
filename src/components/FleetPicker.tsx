@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type ShipEntry, getShipColors } from "../ship/ship-manager";
-import { FLEET_SIZE, type FleetTeam } from "../game/fleet";
+import type { FleetTeam } from "../game/fleet";
 
 interface FleetPickerProps {
   team: FleetTeam;
   ships: readonly ShipEntry[];
   selected: readonly string[];
   otherSelected: readonly string[];
+  fleetSize: number;
   onToggle: (id: string) => void;
 }
 
-/** 一个阵营的舰队选择 popover：按钮上显示当前 3 艘船，展开后可以增删 */
-export default function FleetPicker({ team, ships, selected, otherSelected, onToggle }: FleetPickerProps) {
+/** 一个阵营的舰队选择 popover：按钮上显示当前编队，展开后可以增删 */
+export default function FleetPicker({ team, ships, selected, otherSelected, fleetSize, onToggle }: FleetPickerProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -35,12 +36,12 @@ export default function FleetPicker({ team, ships, selected, otherSelected, onTo
 
   const byId = useMemo(() => new Map(ships.map((ship) => [ship.id, ship])), [ships]);
   const selectedShips = selected.map((id) => byId.get(id)).filter((ship): ship is ShipEntry => ship !== undefined);
-  const full = selected.length >= FLEET_SIZE;
+  const full = selected.length >= fleetSize;
   const teamName = t(team === "red" ? "mapSelect.redFleet" : "mapSelect.blueFleet");
   const otherTeamName = t(team === "red" ? "mapSelect.blueFleet" : "mapSelect.redFleet");
   const popoverId = `fleet-popover-${team}`;
 
-  const slots = Array.from({ length: FLEET_SIZE }, (_, index) => selectedShips[index]);
+  const slots = Array.from({ length: fleetSize }, (_, index) => selectedShips[index]);
   const emptyCount = slots.filter((ship) => ship === undefined).length;
 
   return (
@@ -56,7 +57,7 @@ export default function FleetPicker({ team, ships, selected, otherSelected, onTo
         <span className="fleet-trigger-head">
           <span className="fleet-team">{teamName}</span>
           <span className="fleet-count">
-            {selected.length} / {FLEET_SIZE}
+            {selected.length} / {fleetSize}
           </span>
         </span>
         <span className="fleet-chips">
@@ -80,7 +81,7 @@ export default function FleetPicker({ team, ships, selected, otherSelected, onTo
         <div className="fleet-popover" id={popoverId} role="dialog" aria-label={teamName}>
           <header className="fleet-popover-head">
             <h4>{teamName}</h4>
-            <p>{t("mapSelect.fleetPickerHint", { count: FLEET_SIZE })}</p>
+            <p>{t("mapSelect.fleetPickerHint", { count: fleetSize })}</p>
           </header>
 
           {ships.length === 0 ? (
@@ -109,7 +110,7 @@ export default function FleetPicker({ team, ships, selected, otherSelected, onTo
                       />
                       <span className="fleet-option-name">{ship.name}</span>
                       <span className="fleet-option-class">{t(`ship.class.${ship.shipClass}`)}</span>
-                      <span className="fleet-option-state">{inTeam ? "✓" : inOther ? t("mapSelect.inOther", { team: otherTeamName }) : ""}</span>
+                      <span className="fleet-option-state">{inTeam ? "?" : inOther ? t("mapSelect.inOther", { team: otherTeamName }) : ""}</span>
                     </button>
                   </li>
                 );
@@ -118,7 +119,7 @@ export default function FleetPicker({ team, ships, selected, otherSelected, onTo
           )}
 
           <footer className="fleet-popover-foot">
-            {full ? t("mapSelect.fleetFull") : t("mapSelect.fleetPickerFoot", { count: FLEET_SIZE - selected.length })}
+            {full ? t("mapSelect.fleetFull") : t("mapSelect.fleetPickerFoot", { count: fleetSize - selected.length })}
           </footer>
         </div>
       ) : null}

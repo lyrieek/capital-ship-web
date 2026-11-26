@@ -227,3 +227,37 @@ export function updateShipNavigationLine(visual: ShipVisual, ship: Ship, scene: 
 
   MeshBuilder.CreateDashedLines(visual.line.name, { points: [start, end], instance: visual.line }, scene);
 }
+
+/**
+ * 把单艘舰船的运行状态同步到可视对象：
+ * 显示/隐藏、选中圈、航行导航线、位置朝向、命中闪白、炮塔、头顶 HUD。
+ * 主游戏（game/render）与 playground（TestShip）共用，避免两套逐行重复的同步逻辑。
+ */
+export function syncShipVisual(ship: Ship, visual: ShipVisual, selected: boolean, scene: Scene): void {
+  const alive = ship.alive;
+  visual.mesh.setEnabled(alive);
+  visual.hud.setVisible(alive);
+  visual.ring.mesh.setEnabled(alive && selected);
+  if (!alive) {
+    // 船已阵亡：导航虚线必须一起清掉，否则会残留在海面上
+    disposeNavLine(visual);
+    return;
+  }
+
+  // 航行导航虚线：仅选中且有航行目标时显示，每帧重新计算不残留旧点
+  if (selected) updateShipNavigationLine(visual, ship, scene);
+  else disposeNavLine(visual);
+
+  visual.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
+  visual.mesh.rotation.z = -ship.angle;
+  visual.ring.mesh.position.copyFrom(worldToScene(ship.x, ship.y));
+
+  const flash = 1 + ship.hitFlash * 0.9;
+  visual.material.emissiveColor.set(flash, flash, flash);
+  visual.turretMaterial.emissiveColor.set(flash, flash, flash);
+
+  // 炮塔转向 / 后坐只改变换，舰体贴图创建后不再重绘
+  syncShipTurrets(visual, ship);
+
+  visual.hud.sync(ship);
+}

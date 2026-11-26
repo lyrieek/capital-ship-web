@@ -827,6 +827,49 @@
   font-size: 0.84rem;
 }
 
+.fleet-scale {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  color: rgba(190, 220, 240, 0.8);
+  font-size: 0.82rem;
+}
+
+.fleet-scale-label {
+  color: rgba(190, 220, 240, 0.66);
+}
+
+/* 复用通用 Slider，但换成与舰队面板一致的深色样式 */
+.fleet-scale-slider {
+  background: rgba(6, 23, 36, 0.9);
+  border-color: rgba(125, 180, 220, 0.26);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.fleet-scale-slider .slider-thumb {
+  background: rgba(48, 120, 190, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(140, 205, 255, 0.55),
+    0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.fleet-scale-slider button {
+  min-width: 56px;
+  padding: 6px 11px;
+  color: rgba(190, 220, 240, 0.66);
+  font-size: 12px;
+}
+
+.fleet-scale-slider button[aria-checked="true"] {
+  color: #f2f8ff;
+}
+
+.fleet-scale-slider button:hover:not([aria-checked="true"]):not(:disabled) {
+  color: #d6ecfc;
+  background: rgba(66, 146, 220, 0.22);
+}
+
 .fleet-select-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);

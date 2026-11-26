@@ -80,7 +80,7 @@ function collectThreats(ship: Ship): ThreatItem[] {
   const halfW = ship.wid / 2;
   const threats: ThreatItem[] = [];
   for (const p of game.projectiles) {
-    if (p.owner === ship || p.type !== "torp" || p.dead) continue;
+    if (p.owner === ship || p.kind !== "torpedo" || p.dead || p.fade !== undefined) continue;
     const rx = ship.x - p.x;
     const ry = ship.y - p.y;
     const rvx = ship.vx - p.vx;

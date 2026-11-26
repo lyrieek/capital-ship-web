@@ -6,8 +6,9 @@ import { getTerrainSpec } from "../terrain/spec";
 import type { TerrainPlacement } from "../terrain/layout";
 import { WORLD_H, WORLD_W } from "../game/world";
 import type { ShipEntry } from "../ship/ship-manager";
-import { createFleetShips, FLEET_SIZE, type FleetSelection, type FleetShips, type FleetTeam } from "../game/fleet";
+import { createFleetShips, FLEET_SCALE_ORDER, type FleetScale, type FleetSelection, type FleetShips, type FleetTeam } from "../game/fleet";
 import FleetPicker from "./FleetPicker";
+import { Slider } from "./Slider";
 
 const GRID_STEPS_X = 8;
 const GRID_STEPS_Y = 5;
@@ -16,6 +17,9 @@ export interface MapSelectProps {
   maps: readonly GameMap[];
   ships: readonly ShipEntry[];
   selection: FleetSelection;
+  fleetScale: FleetScale;
+  fleetSize: number;
+  onFleetScaleChange: (scale: FleetScale) => void;
   onToggleShip: (team: FleetTeam, id: string) => void;
   onSelect: (map: GameMap, fleets: FleetShips) => void;
 }
@@ -108,11 +112,11 @@ function MapPreview({ map }: { map: GameMap }) {
   );
 }
 
-export default function MapSelect({ maps, ships, selection, onToggleShip, onSelect }: MapSelectProps) {
+export default function MapSelect({ maps, ships, selection, fleetScale, fleetSize, onFleetScaleChange, onToggleShip, onSelect }: MapSelectProps) {
   const { t } = useTranslation();
 
-  const ready = selection.red.length === FLEET_SIZE && selection.blue.length === FLEET_SIZE;
-  const shortage = ships.length < FLEET_SIZE * 2;
+  const ready = selection.red.length === fleetSize && selection.blue.length === fleetSize;
+  const shortage = ships.length < fleetSize * 2;
 
   const startBattle = useCallback(
     (map: GameMap) => {
@@ -123,10 +127,10 @@ export default function MapSelect({ maps, ships, selection, onToggleShip, onSele
   );
 
   const statusText = shortage
-    ? t("mapSelect.fleetShortage", { count: ships.length, need: FLEET_SIZE * 2 })
+    ? t("mapSelect.fleetShortage", { count: ships.length, need: fleetSize * 2 })
     : ready
-      ? t("mapSelect.fleetReady", { count: FLEET_SIZE * 2 })
-      : t("mapSelect.fleetIncomplete", { red: selection.red.length, blue: selection.blue.length, size: FLEET_SIZE });
+      ? t("mapSelect.fleetReady", { count: fleetSize * 2 })
+      : t("mapSelect.fleetIncomplete", { red: selection.red.length, blue: selection.blue.length, size: fleetSize });
 
   return (
     <section className="map-select">
@@ -138,10 +142,31 @@ export default function MapSelect({ maps, ships, selection, onToggleShip, onSele
       <section className="fleet-select" aria-label={t("mapSelect.fleetTitle")}>
         <header className="fleet-select-header">
           <h3>{t("mapSelect.fleetTitle")}</h3>
-          <p>{t("mapSelect.fleetSubtitle")}</p>
+          <div className="fleet-scale">
+            <span className="fleet-scale-label">{t("mapSelect.fleetScale")}</span>
+            <Slider
+              className="fleet-scale-slider"
+              value={fleetScale}
+              onChange={onFleetScaleChange}
+              options={FLEET_SCALE_ORDER.map((scale) => ({
+                value: scale,
+                label: t(`mapSelect.fleetScales.${scale}`),
+                ariaLabel: t(`mapSelect.fleetScales.${scale}`),
+              }))}
+              ariaLabel={t("mapSelect.fleetScale")}
+            />
+          </div>
+          <p>{t("mapSelect.fleetSubtitle", { size: fleetSize })}</p>
         </header>
         <div className="fleet-select-row">
-          <FleetPicker team="red" ships={ships} selected={selection.red} otherSelected={selection.blue} onToggle={(id) => onToggleShip("red", id)} />
+          <FleetPicker
+            team="red"
+            ships={ships}
+            selected={selection.red}
+            otherSelected={selection.blue}
+            fleetSize={fleetSize}
+            onToggle={(id) => onToggleShip("red", id)}
+          />
           <span className="fleet-vs" aria-hidden="true">
             VS
           </span>
@@ -150,6 +175,7 @@ export default function MapSelect({ maps, ships, selection, onToggleShip, onSele
             ships={ships}
             selected={selection.blue}
             otherSelected={selection.red}
+            fleetSize={fleetSize}
             onToggle={(id) => onToggleShip("blue", id)}
           />
         </div>

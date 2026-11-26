@@ -12,7 +12,16 @@ import { MIN_VIEW_H, MIN_VIEW_W } from "../game/world";
 import { fitViewport, type ViewportSize } from "../game/viewport";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
 import { getMaps, type GameMap } from "../map";
-import { createInitialFleetSelection, FLEET_SIZE, type FleetSelection, type FleetShips, type FleetTeam } from "../game/fleet";
+import {
+  createInitialFleetSelection,
+  DEFAULT_FLEET_SCALE,
+  getFleetSize,
+  resizeFleetSelection,
+  type FleetScale,
+  type FleetSelection,
+  type FleetShips,
+  type FleetTeam,
+} from "../game/fleet";
 import { shipManager } from "../ship/ship-manager";
 import Hud from "./Hud";
 import MapSelect from "./MapSelect";
@@ -299,23 +308,37 @@ function BattleStage({ map, fleets, onChangeMap }: BattleStageProps) {
 export default function BattleCanvas() {
   const [battle, setBattle] = useState<{ map: GameMap; fleets: FleetShips } | null>(null);
   const [ships] = useState(() => shipManager.export());
-  const [selection, setSelection] = useState<FleetSelection>(() => createInitialFleetSelection(ships));
+  const [fleetScale, setFleetScale] = useState<FleetScale>(DEFAULT_FLEET_SCALE);
+  const fleetSize = getFleetSize(fleetScale);
+  const [selection, setSelection] = useState<FleetSelection>(() => createInitialFleetSelection(ships, getFleetSize(DEFAULT_FLEET_SCALE)));
 
-  const toggleShip = useCallback((team: FleetTeam, id: string) => {
-    setSelection((prev) => {
-      const current = prev[team];
-      if (current.includes(id)) {
-        return team === "red"
-          ? { ...prev, red: prev.red.filter((shipId) => shipId !== id) }
-          : { ...prev, blue: prev.blue.filter((shipId) => shipId !== id) };
-      }
-      if (current.length >= FLEET_SIZE) return prev;
-      if (team === "red") {
-        return { red: [...prev.red, id], blue: prev.blue.filter((shipId) => shipId !== id) };
-      }
-      return { red: prev.red.filter((shipId) => shipId !== id), blue: [...prev.blue, id] };
-    });
-  }, []);
+  const toggleShip = useCallback(
+    (team: FleetTeam, id: string) => {
+      setSelection((prev) => {
+        const current = prev[team];
+        if (current.includes(id)) {
+          return team === "red"
+            ? { ...prev, red: prev.red.filter((shipId) => shipId !== id) }
+            : { ...prev, blue: prev.blue.filter((shipId) => shipId !== id) };
+        }
+        if (current.length >= fleetSize) return prev;
+        if (team === "red") {
+          return { red: [...prev.red, id], blue: prev.blue.filter((shipId) => shipId !== id) };
+        }
+        return { red: prev.red.filter((shipId) => shipId !== id), blue: [...prev.blue, id] };
+      });
+    },
+    [fleetSize],
+  );
+
+  // 换档位只改数量上限：超出的船裁掉，不够的按默认偏好补齐，玩家已选的船保留
+  const changeFleetScale = useCallback(
+    (scale: FleetScale) => {
+      setFleetScale(scale);
+      setSelection((prev) => resizeFleetSelection(ships, prev, getFleetSize(scale)));
+    },
+    [ships],
+  );
 
   if (!battle) {
     return (
@@ -323,6 +346,9 @@ export default function BattleCanvas() {
         maps={getMaps()}
         ships={ships}
         selection={selection}
+        fleetScale={fleetScale}
+        fleetSize={fleetSize}
+        onFleetScaleChange={changeFleetScale}
         onToggleShip={toggleShip}
         onSelect={(map, fleets) => setBattle({ map, fleets })}
       />
