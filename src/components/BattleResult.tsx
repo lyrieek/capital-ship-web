@@ -401,6 +401,7 @@ export default function BattleResult({
 
     if (results.length === 0 && !emptyTableLoggedRef.current) {
       emptyTableLoggedRef.current = true;
+      // oxlint-disable-next-line no-console
       console.error("[BattleResult] 战斗结束但没有任何舰船记录，结算表格为空", { title, subtitle });
     }
 

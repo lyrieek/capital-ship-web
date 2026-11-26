@@ -87,12 +87,12 @@ mesh.rotation.z = -(item.rotation ?? 0);
 
 `TerrainField.checkShipyard(x, y)` 返回：
 
-| 字段 | 含义 | 判定 |
-| --- | --- | --- |
-| `inZone` | 在船坞检测区里 | 点落在 `shipyardZoneLocal()` 矩形内（跟着 rotation 旋转） |
-| `onWater` | 靠海 | 船心不在任何 solid 地物上 |
-| `nearLand` | 靠陆 | 到最近岸线距离 ≤ `QUAY_RANGE`（150） |
-| `docked` | 进厂 | `inZone && onWater && nearLand` |
+| 字段       | 含义           | 判定                                                      |
+| ---------- | -------------- | --------------------------------------------------------- |
+| `inZone`   | 在船坞检测区里 | 点落在 `shipyardZoneLocal()` 矩形内（跟着 rotation 旋转） |
+| `onWater`  | 靠海           | 船心不在任何 solid 地物上                                 |
+| `nearLand` | 靠陆           | 到最近岸线距离 ≤ `QUAY_RANGE`（150）                      |
+| `docked`   | 进厂           | `inZone && onWater && nearLand`                           |
 
 只靠海不靠陆 = 路过门口的船；只靠陆不靠海 = 搁在岸上的残骸；两个都不算进厂。
 
@@ -123,11 +123,11 @@ Babylon 的 `scene.pick` / 射线拾取 / `mesh.intersectsMesh` 当然能做网�
 
 ## 6. 碰撞与避让
 
-| 场景 | 负责模块 |
-| --- | --- |
+| 场景                 | 负责模块                                           |
+| -------------------- | -------------------------------------------------- |
 | 航行时贴岸、被岛挡住 | `game/collision.ts`：舰船胶囊 vs `TerrainField` 圆 |
-| 撞上之前提前拐弯 | `TerrainField.avoidAngle()` / `avoidSide()` |
-| 炮弹撞岛 / 落水 | `weapons/update.ts` 查询 `field.isBlockedCircle()` |
+| 撞上之前提前拐弯     | `TerrainField.avoidAngle()` / `avoidSide()`        |
+| 炮弹撞岛 / 落水      | `weapons/update.ts` 查询 `field.isBlockedCircle()` |
 
 - 模拟层不依赖 Babylon Mesh 扫掠：每帧把重叠的船推出地形，渲染层只读 `ship.x/y`。
 - 手动航行：先算期望角，再让 `avoidAngle()` 依次尝试 `0 / ±25° / ±50° / ±75° / ±100°`；全部挡住时返回期望角，交给碰撞推出兜底。
@@ -185,6 +185,5 @@ pnpm dlx tsx -e "import { DEFAULT_TERRAIN_LAYOUT } from './src/terrain/layout.ts
 
 - 文件名 kebab-case，模块内 `index.ts` 做 barrel。
 - 参数表集中在 `spec.ts`（对齐 `WEAPON_SPECS`）。
-- 中文注释；导出成员用 `/** */`，分段用 `//`。
+- 中文注释；多行注释用 `/** */`，单行用 `//`。
 - 所有会改变视觉或校验结果的几何常量，必须只保留一份，由渲染、小地图、校验共同引用。
-- `oxlint` 的 `no-warning-comments` 会对 TODO 报 warn（不阻断），这是有意保留的。

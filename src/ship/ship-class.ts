@@ -46,7 +46,7 @@ export const SHIP_CLASS_SPECS: Record<ShipClassId, ShipClassSpec> = {
     nameKey: "ship.class.torpedoBoat",
     len: 100,
     wid: 30,
-    maxHp: 100,
+    maxHp: 150,
     cruiseFactor: P.normalFactor,
     turrets: [
       { offsetRatio: 0.186, scale: 1 },
@@ -61,7 +61,7 @@ export const SHIP_CLASS_SPECS: Record<ShipClassId, ShipClassSpec> = {
     nameKey: "ship.class.frigate",
     len: 150,
     wid: 42,
-    maxHp: 180,
+    maxHp: 360,
     cruiseFactor: P.normalFactor * 0.9,
     turrets: [
       { offsetRatio: 0.3, scale: 1 },

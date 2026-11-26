@@ -9,6 +9,7 @@ const TestHud = lazy(() => import("./playground/TestHud"));
 const TestExpanse = lazy(() => import("./playground/TestExpanse"));
 const TestWeapons = lazy(() => import("./playground/TestWeapons"));
 const TestShip = lazy(() => import("./playground/TestShip"));
+const ShipListPage = lazy(() => import("./components/ShipList"));
 
 function App() {
   const { t } = useTranslation();
@@ -20,6 +21,7 @@ function App() {
     { to: "/expanse", label: t("expanse.title") },
     { to: "/weapons", label: t("weapons.title") },
     { to: "/ship", label: t("ship.title") },
+    { to: "/ships", label: t("ships.title") },
   ];
 
   return (
@@ -49,6 +51,7 @@ function App() {
             <Route path="/expanse" element={<TestExpanse />} />
             <Route path="/weapons" element={<TestWeapons />} />
             <Route path="/ship" element={<TestShip />} />
+            <Route path="/ships" element={<ShipListPage />} />
           </Routes>
         </Suspense>
       </main>

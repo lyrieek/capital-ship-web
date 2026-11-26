@@ -26,7 +26,7 @@ export interface GameConfig {
   // 规避横向偏移距离（保留参考）
   dodgeSideDist: number;
 
-  // 规避/回正时武器射速惩罚系数
+  // 回正阶段武器射速惩罚系数（规避阶段直接停火）
   firePenalty: number;
 
   // 舰船最小安全距离
@@ -49,9 +49,9 @@ export const P: GameConfig = {
   moveSpeed: 120,
   normalFactor: 0.5,
   dodgeFactor: 1.0,
-  turnRate: (85 * Math.PI) / 180,
+  turnRate: (80 * Math.PI) / 180,
   // 炮管转动明显慢于舰体，避免瞬间对准
-  turretTurnRate: (38 * Math.PI) / 180,
+  turretTurnRate: (32 * Math.PI) / 180,
   dodgeDuration: 1.15,
   recoverDuration: 1.3,
   dodgeSideDist: 70,

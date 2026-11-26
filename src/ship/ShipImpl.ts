@@ -29,6 +29,12 @@ const TORPEDO_RETRY_DELAY = 0.5;
 // 多炮塔齐射时相邻两门炮的开火间隔（秒）：让每门炮依次开火，而不是同一帧全部打出
 const GUN_SALVO_INTERVAL = 0.12;
 
+// 规避时相对前进轴压的舵角：明显的转向（约 68°），既像真实躲雷，也能获得足够的横向脱离速度。
+// 采用「船头对准真实航迹」的方式移动，避免横着平移的僵硬观感。
+const EVASION_TURN = (68 * Math.PI) / 180;
+// 规避航向的横向分量；速度按它补偿，保证按 evasion.ts 算出的横移量能在命中前走完
+const EVASION_LATERAL = Math.sin(EVASION_TURN);
+
 // 进行中的多炮塔齐射队列：舰船逐门开火，炮塔各自后坐
 interface GunVolley {
   /** 下一门要开火的炮塔下标 */
@@ -234,6 +240,8 @@ export class ShipImpl implements Ship {
     this.state = "dodge";
     this.evasionT = 0;
     this.stateT = 0;
+    // 规避优先：立刻中止还没打完的炮塔齐射，集中精力躲雷（已出膛的炮弹不受影响）
+    this.gunVolley = null;
   }
 
   update(dt: number) {
@@ -277,16 +285,34 @@ export class ShipImpl implements Ship {
           this.baseAngle = this.angle;
         }
       } else if (this.state === "dodge") {
-        // 规避状态：朝垂直于航向的方向机动，幅度受限，避免过猛导致反而撞上鱼雷
-        // TODO(鱼雷规避): 后续改为候选机动评分（加速 / 减速 / 横向组合）。
-        const rotStep = P.turnRate * dt;
-        const targetAngle = this.baseAngle + (this.evasionSide * Math.PI) / 2;
-        this.angle = approachAngle(this.angle, targetAngle, rotStep);
-
+        // 规避状态：向安全一侧压一个明显的舵角，边转向边全速脱离鱼雷航线。
+        // 幅度 / 速度由 EvasionBehavior 自适应给出；船头始终对准真实航迹，
+        // 不再横着平移，看起来像一次真正的急转脱离。
+        const px = this.x;
+        const py = this.y;
         const targetY = clamp(this.baseY + this.evasionSide * this.evasionAmplitude, P.yMin, P.yMax);
-        const step = P.moveSpeed * this.evasionSpeedFactor * dt;
-        if (Math.abs(targetY - this.y) <= step) this.y = targetY;
-        else this.y += Math.sign(targetY - this.y) * step;
+        const remainY = targetY - this.y;
+        // 世界坐标航向：X 分量跟随前进方向，Y 分量指向规避侧，两者合成明确的斜向脱离角。
+        // 横移到位后转回水平航向（对应横向模型里的鱼雷航向），保持 Y 不再漂移。
+        const forward = this.dir > 0 ? 0 : Math.PI;
+        const heading = Math.abs(remainY) > 0.5 ? Math.atan2(this.evasionSide * Math.sin(EVASION_TURN), this.dir * Math.cos(EVASION_TURN)) : forward;
+        this.angle = approachAngle(this.angle, heading, P.turnRate * dt);
+
+        // 横向分量只有 sin(EVASION_TURN)，按此补偿总速度，确保实际横移量达到 plan.amplitude
+        const step = (P.moveSpeed * this.evasionSpeedFactor * dt) / EVASION_LATERAL;
+        this.x += Math.cos(this.angle) * step;
+        this.y += Math.sin(this.angle) * step;
+        // 左右越界反弹并更新 dir / baseAngle；上下只做夹取
+        if (this.x < this.minX) {
+          this.x = this.minX;
+          this.dir = 1;
+          this.baseAngle = 0;
+        } else if (this.x > this.maxX) {
+          this.x = this.maxX;
+          this.dir = -1;
+          this.baseAngle = Math.PI;
+        }
+        this.y = clamp(this.y, P.yMin, P.yMax);
 
         this.evasionT += dt;
         // 规避时间到但鱼雷仍在来袭，继续规避，避免过早回正撞上雷
@@ -295,9 +321,11 @@ export class ShipImpl implements Ship {
           this.stateT = 0;
         }
 
-        this.moveForward(P.moveSpeed * this.evasionSpeedFactor * dt);
-        this.vx = this.dir * P.moveSpeed * this.evasionSpeedFactor;
-        this.vy = this.evasionSide * P.moveSpeed * this.evasionSpeedFactor;
+        // 由实际位移反推速度，保证威胁预判读到真实航速
+        if (dt > 0) {
+          this.vx = (this.x - px) / dt;
+          this.vy = (this.y - py) / dt;
+        }
       } else {
         // 回正状态：缓慢转回基准角度并返回基准航线
         const rotStep = P.turnRate * dt;
@@ -334,7 +362,7 @@ export class ShipImpl implements Ship {
     this.updateWeapons(dt);
   }
 
-  // 沿当前 dir 前进并处理左右边界反弹（规避 / 回正阶段仍沿用旧的 X 轴运动）
+  // 沿当前 dir 前进并处理左右边界反弹（回正阶段沿用 X 轴运动；规避阶段已改为按船头航向位移）
   private moveForward(distance: number): void {
     this.x += this.dir * distance;
     if (this.x < this.minX) {
@@ -520,6 +548,10 @@ export class ShipImpl implements Ship {
     const rate = this.state === "normal" ? 1 : P.firePenalty;
     this.gunCD -= dt * rate;
     this.torpCD -= dt * rate;
+
+    // 规避机动期间暂停开火：先集中精力躲雷，机动结束（recover）立刻恢复交战，
+    // 避免出现「鱼雷都到眼前了还在横着船对射」的观感。
+    if (this.state === "dodge") return;
 
     // 手动射击指令优先于自动交战
     if (this.aimOrder) {

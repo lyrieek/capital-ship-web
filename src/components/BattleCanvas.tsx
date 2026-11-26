@@ -12,6 +12,8 @@ import { MIN_VIEW_H, MIN_VIEW_W } from "../game/world";
 import { fitViewport, type ViewportSize } from "../game/viewport";
 import { usePreventContextMenu } from "../hooks/use-prevent-context-menu";
 import { getMaps, type GameMap } from "../map";
+import { createInitialFleetSelection, FLEET_SIZE, type FleetSelection, type FleetShips, type FleetTeam } from "../game/fleet";
+import { shipManager } from "../ship/ship-manager";
 import Hud from "./Hud";
 import MapSelect from "./MapSelect";
 import BattleResult from "./BattleResult";
@@ -29,12 +31,13 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 interface BattleStageProps {
   map: GameMap;
+  fleets: FleetShips;
   onChangeMap: () => void;
 }
 
 // 一场战斗：创建 Babylon 场景、驱动主循环，并在结束时提供返回选图的入口。
 // oxlint-disable-next-line max-lines-per-function
-function BattleStage({ map, onChangeMap }: BattleStageProps) {
+function BattleStage({ map, fleets, onChangeMap }: BattleStageProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<Scene | null>(null);
@@ -97,7 +100,7 @@ function BattleStage({ map, onChangeMap }: BattleStageProps) {
     if (!canvas || !size) return;
 
     // 地图决定地形摆位与限制区；initializeGame 必须在 initRender 之前完成。
-    initializeGame(map);
+    initializeGame(map, fleets);
     const engine = initRender(canvas, getRestrictAreas(), size);
     sceneRef.current = engine.scenes[0] ?? null;
     setSceneVersion((v) => v + 1);
@@ -220,7 +223,7 @@ function BattleStage({ map, onChangeMap }: BattleStageProps) {
       sceneRef.current = null;
       setSceneVersion(0);
     };
-  }, [map, ready]);
+  }, [map, fleets, ready]);
 
   // 可用空间变化后同步相机 / HUD / 海面与 backbuffer。
   useLayoutEffect(() => {
@@ -292,12 +295,39 @@ function BattleStage({ map, onChangeMap }: BattleStageProps) {
 }
 
 // 选图 → 战斗 → 结束后返回选图。战场以地图 id 为 key，换图时完整重建场景。
+// 舰队选择放在这一层，战斗结束返回选图时仍保留上一次的编队。
 export default function BattleCanvas() {
-  const [selectedMap, setSelectedMap] = useState<GameMap | null>(null);
+  const [battle, setBattle] = useState<{ map: GameMap; fleets: FleetShips } | null>(null);
+  const [ships] = useState(() => shipManager.export());
+  const [selection, setSelection] = useState<FleetSelection>(() => createInitialFleetSelection(ships));
 
-  if (!selectedMap) {
-    return <MapSelect maps={getMaps()} onSelect={setSelectedMap} />;
+  const toggleShip = useCallback((team: FleetTeam, id: string) => {
+    setSelection((prev) => {
+      const current = prev[team];
+      if (current.includes(id)) {
+        return team === "red"
+          ? { ...prev, red: prev.red.filter((shipId) => shipId !== id) }
+          : { ...prev, blue: prev.blue.filter((shipId) => shipId !== id) };
+      }
+      if (current.length >= FLEET_SIZE) return prev;
+      if (team === "red") {
+        return { red: [...prev.red, id], blue: prev.blue.filter((shipId) => shipId !== id) };
+      }
+      return { red: prev.red.filter((shipId) => shipId !== id), blue: [...prev.blue, id] };
+    });
+  }, []);
+
+  if (!battle) {
+    return (
+      <MapSelect
+        maps={getMaps()}
+        ships={ships}
+        selection={selection}
+        onToggleShip={toggleShip}
+        onSelect={(map, fleets) => setBattle({ map, fleets })}
+      />
+    );
   }
 
-  return <BattleStage key={selectedMap.id} map={selectedMap} onChangeMap={() => setSelectedMap(null)} />;
+  return <BattleStage key={battle.map.id} map={battle.map} fleets={battle.fleets} onChangeMap={() => setBattle(null)} />;
 }

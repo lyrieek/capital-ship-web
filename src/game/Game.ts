@@ -7,6 +7,7 @@ import { resolveCollisions as resolveShipCollisions } from "./collision";
 import { H, W } from "./utils";
 import { RestrictAreaImpl } from "./RestrictAreaImpl";
 import type { GameMap } from "../map";
+import type { FleetShips } from "./fleet";
 import { BattleRecord } from "./BattleRecord";
 // 武器的发射逻辑与弹药更新已抽离到 src/weapons
 import { clampToBounds, fireWeapon, fireWeaponShot, getWeaponSpec, predictAim, updateProjectiles as updateWeaponProjectiles } from "../weapons";
@@ -14,6 +15,10 @@ import { clampToBounds, fireWeapon, fireWeaponShot, getWeaponSpec, predictAim, u
 import { createTerrainItems, getTerrainField, setTerrainField, TerrainField } from "../terrain";
 
 const END_DELAY = 3;
+
+// 限制区扩张：开战后 3 秒开始，到第 12 秒完全展开（按对局时间计），之后固定不动。
+const EXPAND_START = 3;
+const EXPAND_END = 12;
 
 // 手动齐射（F 键）的公共冷却，避免连续按键无限输出
 const MANUAL_FIRE_COOLDOWN = 2.5;
@@ -75,10 +80,42 @@ function prepareMap(map: GameMap): { red: RestrictAreaImpl; blue: RestrictAreaIm
   return { red, blue };
 }
 
+// 没有传入出战舰队时的兜底：保持旧的 2v2 鱼雷艇对局。
+function defaultFleet(): FleetShips {
+  return {
+    red: [
+      { team: "red", name: "红-1", nameKey: "shipHud.names.red1" },
+      { team: "red", name: "红-2", nameKey: "shipHud.names.red2" },
+    ],
+    blue: [
+      { team: "blue", name: "蓝-1", nameKey: "shipHud.names.blue1" },
+      { team: "blue", name: "蓝-2", nameKey: "shipHud.names.blue2" },
+    ],
+  };
+}
+
+function lerp(from: number, to: number, t: number): number {
+  return from + (to - from) * t;
+}
+
+// 扩张进度 0..1。smoothstep 让开始和结束都更柔和，中段保持均匀推进。
+function expandProgress(time: number): number {
+  if (time <= EXPAND_START) return 0;
+  if (time >= EXPAND_END) return 1;
+  const t = (time - EXPAND_START) / (EXPAND_END - EXPAND_START);
+  return t * t * (3 - 2 * t);
+}
+
 // oxlint-disable-next-line max-lines-per-function
-export function initializeGame(map: GameMap): GameState {
+export function initializeGame(map: GameMap, fleets?: FleetShips): GameState {
   const { red, blue } = prepareMap(map);
+  const fleet = fleets ?? defaultFleet();
   const record = new BattleRecord();
+
+  // 扩张终点取双方限制区的并集：展开后两区完全重合，面积一致。
+  const unionMinX = Math.min(red.bounds.minX, blue.bounds.minX);
+  const unionMaxX = Math.max(red.bounds.maxX, blue.bounds.maxX);
+  let expandDone = false;
 
   const game: GameState = {
     ships: [],
@@ -98,12 +135,12 @@ export function initializeGame(map: GameMap): GameState {
       this.winnerTeam = null;
       this.manualFireCD = 0;
 
-      this.ships = [
-        red.createShip({ team: "red", name: "红-1", nameKey: "shipHud.names.red1" }),
-        red.createShip({ team: "red", name: "红-2", nameKey: "shipHud.names.red2" }),
-        blue.createShip({ team: "blue", name: "蓝-1", nameKey: "shipHud.names.blue1" }),
-        blue.createShip({ team: "blue", name: "蓝-2", nameKey: "shipHud.names.blue2" }),
-      ];
+      // 重开对局：限制区回到地图初始边界，扩张重新计时
+      red.resetBounds();
+      blue.resetBounds();
+      expandDone = false;
+
+      this.ships = [...fleet.red.map((config) => red.createShip(config)), ...fleet.blue.map((config) => blue.createShip(config))];
       this.record.reset(this.ships, this.time);
     },
 
@@ -212,6 +249,21 @@ export function initializeGame(map: GameMap): GameState {
         this.time += dt;
         for (const s of this.ships) s.update(dt);
         this.resolveCollisions();
+
+        // 限制区扩张：按绝对进度从初始边界插值，避免逐帧在已扩张的边界上叠加。
+        // 第 12 秒到达双方并集后固定，只负责 clamp 舰船位置。
+        if (!expandDone) {
+          const progress = expandProgress(this.time);
+          if (progress > 0) {
+            red.setBoundsX(lerp(red.bounds.minX, unionMinX, progress), lerp(red.bounds.maxX, unionMaxX, progress));
+            blue.setBoundsX(lerp(blue.bounds.minX, unionMinX, progress), lerp(blue.bounds.maxX, unionMaxX, progress));
+            // 边界在扩大，必须同步给舰船，否则 clamp 仍停在旧边界
+            for (const ship of this.ships) {
+              (ship.team === "red" ? red : blue).applyTo(ship);
+            }
+            if (progress >= 1) expandDone = true;
+          }
+        }
       }
 
       this.updateProjectiles(dt);

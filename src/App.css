@@ -282,3 +282,831 @@
   padding: 1rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
+
+/* 舰船列表页面：编队编辑 + 配置预览 */
+.ship-list {
+  width: calc(100% - 2rem);
+  max-width: 1180px;
+  margin: 1rem auto;
+  padding: clamp(18px, 3vw, 32px);
+  border: 1px solid rgba(125, 180, 220, 0.28);
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 0%, rgba(28, 95, 130, 0.35), transparent 60%), linear-gradient(160deg, #071b2a 0%, #04121d 100%);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.ship-list-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 1rem;
+  padding-bottom: 12px;
+  border-bottom: 2px solid rgba(125, 180, 220, 0.28);
+}
+
+.ship-list-header h2 {
+  margin: 0;
+  color: #e6f2fb;
+  font-size: 1.6rem;
+}
+
+.ship-list-subtitle {
+  margin: 6px 0 0;
+  max-width: 68ch;
+  color: rgba(190, 220, 240, 0.68);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.ship-list-count {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 4px 12px;
+  border: 1px solid rgba(125, 180, 220, 0.3);
+  border-radius: 999px;
+  color: #cfe9fb;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.ship-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.ship-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ship-toolbar-end {
+  margin-left: auto;
+}
+
+.ship-btn,
+.ship-select {
+  padding: 6px 12px;
+  border: 1px solid rgba(125, 180, 220, 0.24);
+  border-radius: 6px;
+  background: rgba(6, 23, 36, 0.92);
+  color: #f2f8ff;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.ship-btn {
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.ship-btn:hover:not(:disabled) {
+  border-color: rgba(150, 215, 255, 0.55);
+  background: rgba(8, 40, 60, 0.95);
+}
+
+.ship-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ship-btn-primary {
+  border-color: rgba(125, 200, 255, 0.55);
+  background: rgba(23, 105, 150, 0.85);
+}
+
+.ship-btn-primary:hover:not(:disabled) {
+  background: rgba(30, 130, 182, 0.95);
+}
+
+.ship-btn-danger {
+  border-color: rgba(220, 90, 78, 0.4);
+  background: rgba(120, 32, 28, 0.82);
+}
+
+.ship-btn-danger:hover:not(:disabled) {
+  border-color: rgba(255, 120, 105, 0.7);
+  background: rgba(160, 42, 36, 0.95);
+}
+
+.ship-btn-confirming {
+  border-color: rgba(255, 190, 120, 0.8);
+  background: rgba(170, 70, 30, 0.95);
+}
+
+.ship-select {
+  min-width: 132px;
+  cursor: pointer;
+}
+
+.ship-select:focus,
+.ship-btn:focus-visible,
+.ship-name-input:focus,
+.ship-btn-small:focus-visible {
+  outline: 2px solid rgba(160, 220, 255, 0.8);
+  outline-offset: 1px;
+}
+
+.import-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ship-list-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  min-height: 22px;
+  margin-bottom: 10px;
+  color: rgba(190, 220, 240, 0.62);
+  font-size: 0.82rem;
+}
+
+.ship-hint {
+  color: rgba(255, 214, 150, 0.8);
+}
+
+.ship-status {
+  margin-left: auto;
+  color: #9fe4b4;
+}
+
+.ship-status-error {
+  color: #ff9c90;
+}
+
+.ship-list-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (min-width: 1060px) {
+  .ship-list-body-selected {
+    grid-template-rows: minmax(0, 1fr) 330px;
+  }
+}
+
+.ship-table-wrap {
+  overflow-x: auto;
+  max-height: 560px;
+  border: 1px solid rgba(125, 180, 220, 0.24);
+  border-radius: 8px;
+  background: rgba(6, 23, 36, 0.92);
+}
+
+.ships {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.ships th {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(125, 180, 220, 0.18);
+  background: rgba(125, 180, 220, 0.1);
+  color: #cfe9fb;
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ships td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(125, 180, 220, 0.12);
+  color: #f2f8ff;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+.ships tr:last-child td {
+  border-bottom: none;
+}
+
+.ship-row {
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.ship-row:hover {
+  background: rgba(125, 180, 220, 0.08);
+}
+
+.ship-row:focus-visible {
+  outline: 2px solid rgba(160, 220, 255, 0.7);
+  outline-offset: -2px;
+}
+
+.ship-row-selected {
+  background: rgba(84, 160, 214, 0.18);
+  box-shadow: inset 3px 0 0 rgba(160, 220, 255, 0.9);
+}
+
+.ship-row-selected:hover {
+  background: rgba(84, 160, 214, 0.24);
+}
+
+.ship-name-input {
+  width: 100%;
+  min-width: 120px;
+  max-width: 220px;
+  padding: 5px 8px;
+  border: 1px solid rgba(125, 180, 220, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: #f2f8ff;
+  font-size: 0.9rem;
+}
+
+.ship-name-input:hover {
+  border-color: rgba(150, 215, 255, 0.5);
+}
+
+.ship-spec-hint {
+  margin-top: 4px;
+  color: rgba(190, 220, 240, 0.58);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.ship-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.color-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.color-swatch-duo {
+  flex-shrink: 0;
+  width: 30px;
+  height: 24px;
+  border-radius: 4px;
+}
+
+.ship-color-slider {
+  width: 110px;
+  height: 12px;
+  padding: 0;
+  border: 1px solid rgba(125, 180, 220, 0.35);
+  border-radius: 999px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.ship-color-slider::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #0b2a3d;
+  border-radius: 50%;
+  appearance: none;
+  background: #f2f8ff;
+  box-shadow: 0 0 0 2px rgba(242, 248, 255, 0.24);
+}
+
+.ship-color-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #0b2a3d;
+  border-radius: 50%;
+  background: #f2f8ff;
+  box-shadow: 0 0 0 2px rgba(242, 248, 255, 0.24);
+}
+
+.ship-color-slider:focus-visible {
+  outline: 2px solid rgba(160, 220, 255, 0.8);
+  outline-offset: 2px;
+}
+
+.ship-offset {
+  min-width: 38px;
+  color: rgba(190, 220, 240, 0.62);
+  font-size: 0.78rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.team-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.team-red {
+  background: #ff7b6b;
+  box-shadow: 0 0 6px rgba(255, 123, 107, 0.7);
+}
+
+.team-blue {
+  background: #7cc4ff;
+  box-shadow: 0 0 6px rgba(124, 196, 255, 0.7);
+}
+
+.team-none {
+  background: rgba(190, 220, 240, 0.4);
+}
+
+.ship-actions {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.ship-actions-head {
+  width: 150px;
+}
+
+.ship-btn-small {
+  min-width: 28px;
+  padding: 4px 7px;
+  border: 1px solid rgba(125, 180, 220, 0.24);
+  border-radius: 4px;
+  background: rgba(6, 23, 36, 0.92);
+  color: #f2f8ff;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.ship-btn-small:hover:not(:disabled) {
+  border-color: rgba(150, 215, 255, 0.55);
+  background: rgba(8, 40, 60, 0.95);
+}
+
+.ship-btn-small:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ship-btn-small.ship-btn-danger {
+  border-color: rgba(220, 90, 78, 0.4);
+  background: rgba(120, 32, 28, 0.82);
+}
+
+.ship-list-empty {
+  margin: 0;
+  padding: 2.5rem 1rem;
+  border: 1px dashed rgba(125, 180, 220, 0.3);
+  border-radius: 8px;
+  color: rgba(190, 220, 240, 0.6);
+  text-align: center;
+}
+
+.ship-preview {
+  position: sticky;
+  top: 0;
+  padding: 16px;
+  border: 1px solid rgba(125, 180, 220, 0.24);
+  border-radius: 8px;
+  background: rgba(6, 23, 36, 0.92);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.ship-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ship-preview-head h3 {
+  margin: 0;
+  color: #e6f2fb;
+  font-size: 1.1rem;
+}
+
+.ship-preview-head p {
+  margin: 4px 0 0;
+  color: rgba(190, 220, 240, 0.66);
+  font-size: 0.8rem;
+}
+
+.ship-preview-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ship-preview-swatches {
+  display: flex;
+  gap: 4px;
+}
+
+.ship-preview-swatches span {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+.ship-preview-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.ship-preview-stats div {
+  padding: 8px 10px;
+  border: 1px solid rgba(125, 180, 220, 0.16);
+  border-radius: 6px;
+  background: rgba(125, 180, 220, 0.06);
+}
+
+.ship-preview-stats dt {
+  color: rgba(190, 220, 240, 0.58);
+  font-size: 0.72rem;
+}
+
+.ship-preview-stats dd {
+  margin: 3px 0 0;
+  color: #d8efff;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ship-preview-json summary {
+  color: rgba(190, 220, 240, 0.7);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.ship-preview-json pre {
+  max-height: 240px;
+  margin: 8px 0 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid rgba(125, 180, 220, 0.15);
+  border-radius: 6px;
+  background: rgba(2, 8, 15, 0.6);
+  color: #a5d8ff;
+  font-size: 0.76rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ship-preview-empty {
+  margin: 0;
+  padding: 1.5rem 1rem;
+  border: 1px dashed rgba(125, 180, 220, 0.22);
+  border-radius: 8px;
+  color: rgba(190, 220, 240, 0.48);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .ship-list {
+    width: calc(100% - 1rem);
+    padding: 16px 12px 24px;
+  }
+
+  .ship-list-header {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ship-toolbar-end {
+    margin-left: 0;
+  }
+
+  .ship-status {
+    margin-left: 0;
+  }
+}
+
+/* 选图页的出战舰队选择 */
+.fleet-select {
+  margin-bottom: 22px;
+  padding: 16px;
+  border: 1px solid rgba(125, 180, 220, 0.22);
+  border-radius: 10px;
+  background: rgba(4, 18, 28, 0.55);
+}
+
+.fleet-select-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+}
+
+.fleet-select-header h3 {
+  margin: 0;
+  color: #e6f2fb;
+  font-size: 1.05rem;
+}
+
+.fleet-select-header p {
+  margin: 0;
+  color: rgba(190, 220, 240, 0.66);
+  font-size: 0.84rem;
+}
+
+.fleet-select-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.fleet-vs {
+  align-self: center;
+  color: rgba(190, 220, 240, 0.5);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.fleet-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.fleet-trigger {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(125, 180, 220, 0.26);
+  border-radius: 8px;
+  background: rgba(6, 23, 36, 0.9);
+  color: #f2f8ff;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.fleet-picker-red .fleet-trigger {
+  border-color: rgba(255, 123, 107, 0.4);
+  box-shadow: inset 3px 0 0 rgba(255, 123, 107, 0.7);
+}
+
+.fleet-picker-blue .fleet-trigger {
+  border-color: rgba(124, 196, 255, 0.4);
+  box-shadow: inset 3px 0 0 rgba(124, 196, 255, 0.7);
+}
+
+.fleet-trigger:hover {
+  background: rgba(8, 40, 60, 0.95);
+}
+
+.fleet-trigger[aria-expanded="true"] {
+  border-color: rgba(160, 220, 255, 0.8);
+  background: rgba(8, 40, 60, 0.98);
+}
+
+.fleet-trigger:focus-visible {
+  outline: 2px solid rgba(160, 220, 255, 0.9);
+  outline-offset: 2px;
+}
+
+.fleet-trigger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fleet-team {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.fleet-picker-red .fleet-team {
+  color: #ffb1a6;
+}
+
+.fleet-picker-blue .fleet-team {
+  color: #a8d8ff;
+}
+
+.fleet-count {
+  padding: 2px 8px;
+  border: 1px solid rgba(125, 180, 220, 0.2);
+  border-radius: 999px;
+  color: rgba(190, 220, 240, 0.7);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fleet-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 26px;
+}
+
+.fleet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid rgba(125, 180, 220, 0.26);
+  border-radius: 999px;
+  background: rgba(125, 180, 220, 0.08);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.fleet-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.fleet-chip-empty {
+  border-style: dashed;
+  color: rgba(190, 220, 240, 0.4);
+}
+
+.fleet-trigger-hint {
+  color: rgba(190, 220, 240, 0.5);
+  font-size: 0.74rem;
+}
+
+.fleet-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(360px, 92vw);
+  padding: 12px;
+  border: 1px solid rgba(125, 180, 220, 0.4);
+  border-radius: 10px;
+  background: #081f2f;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+}
+
+.fleet-picker-blue .fleet-popover {
+  right: 0;
+  left: auto;
+}
+
+.fleet-popover-head h4 {
+  margin: 0 0 4px;
+  color: #e6f2fb;
+  font-size: 0.95rem;
+}
+
+.fleet-popover-head p {
+  margin: 0 0 10px;
+  color: rgba(190, 220, 240, 0.62);
+  font-size: 0.78rem;
+}
+
+.fleet-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.fleet-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(125, 180, 220, 0.05);
+  color: #e6f2fb;
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fleet-option:hover:not(:disabled) {
+  border-color: rgba(125, 180, 220, 0.28);
+  background: rgba(125, 180, 220, 0.14);
+}
+
+.fleet-option.is-selected {
+  border-color: rgba(160, 220, 255, 0.5);
+  background: rgba(84, 160, 214, 0.2);
+}
+
+.fleet-option.is-other {
+  opacity: 0.6;
+}
+
+.fleet-option:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.fleet-option-swatch {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+}
+
+.fleet-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-option-class {
+  color: rgba(190, 220, 240, 0.55);
+  font-size: 0.74rem;
+}
+
+.fleet-option-state {
+  color: #9fe4b4;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.fleet-option.is-other .fleet-option-state {
+  color: rgba(255, 190, 140, 0.9);
+}
+
+.fleet-popover-empty {
+  margin: 0;
+  padding: 14px;
+  color: rgba(190, 220, 240, 0.6);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.fleet-popover-foot {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(125, 180, 220, 0.14);
+  color: rgba(190, 220, 240, 0.5);
+  font-size: 0.74rem;
+}
+
+.fleet-status {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+}
+
+.fleet-status.is-ready {
+  color: #9fe4b4;
+}
+
+.fleet-status.is-warning {
+  color: rgba(255, 200, 130, 0.9);
+}
+
+.map-card-start:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.map-card-start:disabled:hover {
+  background: linear-gradient(180deg, rgba(58, 138, 204, 0.95), rgba(38, 104, 162, 0.95));
+}
+
+@media (max-width: 720px) {
+  .fleet-select-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fleet-vs {
+    justify-self: center;
+  }
+
+  .fleet-popover,
+  .fleet-picker-blue .fleet-popover {
+    right: auto;
+    left: 0;
+  }
+}

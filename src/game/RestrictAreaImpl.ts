@@ -12,7 +12,7 @@ import { Color3, LinesMesh, VertexBuffer, VertexData, type Scene } from "@babylo
 import { H, W, clamp } from "./utils";
 import { createShip } from "../ship/create-ship";
 import { getTerrainField } from "../terrain";
-import { MAP_TEAM_COLORS, type MapZone } from "../map/types";
+import { MAP_TEAM_COLORS, type MapPoint, type MapZone } from "../map/types";
 import { RestrictArea } from "../map/RestrictArea";
 import type { Ship, ShipConfig } from "../ship/ship";
 
@@ -54,23 +54,65 @@ export class RestrictAreaImpl extends RestrictArea {
   /** 不可放船判定：以 (x, y) 为圆心、radius 为半径的圆是否压到陆地 */
   isBlocked: (x: number, y: number, radius: number) => boolean;
 
+  /** 运行期可变的 X 轴边界（扩张后会变），初始等于原始 bounds */
+  private curMinX: number;
+  private curMaxX: number;
+
   /** 虚线顶点缓冲：固定 (虚线数 + 1) 条三点折线，只改坐标不重建网格 */
   private dashPositions: Float32Array | null = null;
   /** 预留的折线条数（其中一条用于跨接缝的虚线分段） */
   private dashLineCount = 0;
-  /** 虚线数量 / 实线长度 / 一格长度 / 周长 */
+  /** 虚线容量：按世界最大周长预留，扩张时只增加实际使用条数 */
   private dashCount = 0;
-  private dashLength = 0;
-  private dashCycle = 0;
-  private perimeter = 0;
-  /** 当前相位：沿周长向后移动，实现虚线缓慢流动 */
-  private dashOffset = 0;
+  /** 相位用 0..1 的归一化值表示，扩张改变周长后无需换算 */
+  private dashPhase = 0;
 
   constructor(zone: MapZone, enabled = true, isBlocked: (x: number, y: number, radius: number) => boolean = defaultIsBlocked) {
     super(zone);
     this.enabled = enabled;
     this.line = null;
     this.isBlocked = isBlocked;
+    this.curMinX = this.bounds.minX;
+    this.curMaxX = this.bounds.maxX;
+  }
+
+  get minX(): number {
+    return this.curMinX;
+  }
+
+  get maxX(): number {
+    return this.curMaxX;
+  }
+
+  get width(): number {
+    return this.curMaxX - this.curMinX;
+  }
+
+  get center(): MapPoint {
+    return { x: (this.curMinX + this.curMaxX) / 2, y: super.center.y };
+  }
+
+  /** 直接把 X 轴边界设为目标值；扩张由外部按进度插值，保证边界单调且不会抖动。 */
+  setBoundsX(minX: number, maxX: number): void {
+    if (maxX <= minX) return;
+    this.curMinX = minX;
+    this.curMaxX = maxX;
+  }
+
+  /** 恢复到地图原始边界（重开对局时用） */
+  resetBounds(): void {
+    this.curMinX = this.bounds.minX;
+    this.curMaxX = this.bounds.maxX;
+  }
+
+  /** 当前周长随扩张实时变化，虚线的参数化必须基于它而不是初始尺寸 */
+  private get perimeter(): number {
+    return 2 * (this.width + this.height);
+  }
+
+  /** 判定点是否在运行期边界内（扩张后原 bounds 已不再是有效范围） */
+  override contains(x: number, y: number): boolean {
+    return x >= this.curMinX && x <= this.curMaxX && y >= this.minY && y <= this.maxY;
   }
 
   // 画限制区虚线框：颜色跟随阵营并带透明度。
@@ -81,16 +123,15 @@ export class RestrictAreaImpl extends RestrictArea {
 
     const w = this.width;
     const h = this.height;
-    this.perimeter = 2 * (w + h);
-    if (this.perimeter <= 0) return null;
-    // 一条虚线 + 一条间隔为一格。上限按总长 / 60 控制观感，
-    // 下限保证一格不超过最短边，这样一条虚线最多只跨一个拐角，折线用三个点就够。
-    const shortestSide = Math.max(1, Math.min(w, h));
-    const byLength = Math.round(this.perimeter / DASH_CYCLE);
-    const bySide = Math.ceil(this.perimeter / shortestSide);
+    const perimeter = 2 * (w + h);
+    if (perimeter <= 0) return null;
+    // 虚线密度固定为约 60px 一格。初始按世界最大周长预留容量，
+    // 扩张时只增加实际使用的条数（cycle 始终稳定，不会越拉越长）。
+    const maxPerimeter = 2 * (W + H);
+    const shortestSide = Math.max(1, Math.min(W, H));
+    const byLength = Math.round(maxPerimeter / DASH_CYCLE);
+    const bySide = Math.ceil(maxPerimeter / shortestSide);
     this.dashCount = clamp(Math.max(byLength, bySide), 4, 600);
-    this.dashCycle = this.perimeter / this.dashCount;
-    this.dashLength = this.dashCycle * DASH_RATIO;
     // 正常情况下每格一条折线；跨过周长接缝的那一条会拆成两段，所以多预留一条
     this.dashLineCount = this.dashCount + 1;
     this.dashPositions = new Float32Array(this.dashLineCount * DASH_POINTS * 3);
@@ -114,7 +155,7 @@ export class RestrictAreaImpl extends RestrictArea {
     line.color = Color3.FromHexString(MAP_TEAM_COLORS[this.team]);
     line.alpha = LINE_ALPHA;
     this.line = line;
-    this.dashOffset = 0;
+    this.dashPhase = 0;
     this.writeDashPositions();
     return line;
   }
@@ -124,24 +165,32 @@ export class RestrictAreaImpl extends RestrictArea {
    * 顶点缓冲的拓扑固定，只更新坐标，因此可以逐帧平滑移动而不用重建网格。
    */
   update(dt: number): void {
-    if (!this.line || !this.dashPositions || this.dashCycle <= 0) return;
-    this.dashOffset = (this.dashOffset + DASH_FLOW_SPEED * dt) % this.dashCycle;
+    if (!this.line || !this.dashPositions || this.dashCount <= 0) return;
+    const perimeter = this.perimeter;
+    if (perimeter <= 0) return;
+    // 相位归一化到 0..1：周长变化时虚线的流动速度保持恒定像素/秒
+    this.dashPhase = (this.dashPhase + (DASH_FLOW_SPEED * dt) / perimeter) % 1;
     this.writeDashPositions();
   }
 
-  /** 按当前相位重写所有虚线顶点 */
+  /** 按当前相位和当前周长重写所有虚线顶点 */
   private writeDashPositions(): void {
     const positions = this.dashPositions;
-    if (!positions) return;
+    const perimeter = this.perimeter;
+    if (!positions || perimeter <= 0 || this.dashCount <= 0) return;
 
+    // 按当前周长决定实际使用多少条虚线，保持每格约 60px 的观感
+    const activeCount = clamp(Math.round(perimeter / DASH_CYCLE), 4, this.dashCount);
+    const cycle = perimeter / activeCount;
+    const dashLength = cycle * DASH_RATIO;
     let line = 0;
-    for (let i = 0; i < this.dashCount; i++) {
-      const start = (this.dashOffset + i * this.dashCycle) % this.perimeter;
-      const end = start + this.dashLength;
-      if (end > this.perimeter) {
+    for (let i = 0; i < activeCount; i++) {
+      const start = ((this.dashPhase + i / activeCount) % 1) * perimeter;
+      const end = start + dashLength;
+      if (end > perimeter) {
         // 跨过周长接缝：拆成「接缝前」和「接缝后」两段，分别占用一条折线
-        this.writeDashSegment(line, start, start, this.perimeter);
-        this.writeDashSegment(line + 1, 0, 0, end - this.perimeter);
+        this.writeDashSegment(line, start, start, perimeter);
+        this.writeDashSegment(line + 1, 0, 0, end - perimeter);
         line += 2;
         continue;
       }
@@ -172,8 +221,9 @@ export class RestrictAreaImpl extends RestrictArea {
 
     const w = this.width;
     const h = this.height;
-    let t = s % this.perimeter;
-    if (t < 0) t += this.perimeter;
+    const perimeter = this.perimeter;
+    let t = s % perimeter;
+    if (t < 0) t += perimeter;
 
     // 按顺时针方向依次经过 上 → 右 → 下 → 左边
     let x = 0;
@@ -246,11 +296,47 @@ export class RestrictAreaImpl extends RestrictArea {
     return null;
   }
 
-  // 自动在限制区内摆放一艘船：未指定的 x/y 随机分配，缺省朝向按阵营。
+  // 在指定点附近随机找一个不被地物占用的点，用于让同一出生点出港的多艘船不完全重叠。
+  private pickNear(x: number, y: number): { x: number; y: number } | null {
+    const offset = 40;
+    for (let i = 0; i < SPAWN_TRIES; i++) {
+      const nx = x + (Math.random() - 0.5) * offset * 2;
+      const ny = y + (Math.random() - 0.5) * offset * 2;
+      if (!this.isBlocked(nx, ny, SPAWN_CLEARANCE)) return { x: nx, y: ny };
+    }
+    return null;
+  }
+
+  // 把出生点解析成可用的水面点：点本身可用就直接用；
+  // 否则以出生点为圆心逐圈向外找最近的可用点。
+  // 例如红方船厂坐标落在岛屿碰撞圈内，这里会把它推到船坞外侧的水面，
+  // 而不是直接把船丢到随机集结带。找不到时返回 null。
+  private resolveSpawn(spawn: MapPoint): { x: number; y: number } | null {
+    if (this.contains(spawn.x, spawn.y) && !this.isBlocked(spawn.x, spawn.y, SPAWN_CLEARANCE)) {
+      return { x: spawn.x, y: spawn.y };
+    }
+    const step = 30;
+    const maxRadius = 500;
+    for (let radius = step; radius <= maxRadius; radius += step) {
+      const samples = Math.max(8, Math.round((2 * Math.PI * radius) / step));
+      for (let i = 0; i < samples; i++) {
+        const angle = (i / samples) * Math.PI * 2;
+        const x = spawn.x + Math.cos(angle) * radius;
+        const y = spawn.y + Math.sin(angle) * radius;
+        if (this.contains(x, y) && !this.isBlocked(x, y, SPAWN_CLEARANCE)) return { x, y };
+      }
+    }
+    return null;
+  }
+
+  // 自动在限制区内摆放一艘船：未指定的 x/y 默认在出生点附近分配，缺省朝向按阵营。
   createShip(cfg: ShipConfig): Ship {
     const ship = createShip(cfg);
     if (cfg.x === undefined || cfg.y === undefined) {
-      const spot = this.pickFreeSpot();
+      // 优先使用地图指定的出生点：先解析成水面点，再在附近小幅随机避免多艘船完全重叠；
+      // 两侧都失败时才退化到限制区集结带随机摆位。
+      const anchor = this.resolveSpawn(this.getSpawnPoint());
+      const spot = anchor ? (this.pickNear(anchor.x, anchor.y) ?? anchor) : this.pickFreeSpot();
       if (!spot) {
         throw new Error(`[RestrictArea] 队伍 "${this.team}" 在限制区内找不到不被地物占用的空位（尝试 ${SPAWN_TRIES} 次）`);
       }

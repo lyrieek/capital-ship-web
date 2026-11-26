@@ -1,24 +1,26 @@
-// 规避行为抽象（原 Dodge，改称 Evasion）：不同舰船可使用不同规避逻辑
-// （未来如驱逐舰为战列舰主动挡雷）。
-// 当前所有舰船缺省使用 DefaultEvasionBehavior。
-//
-// TODO(鱼雷规避): 现在仍是固定幅度横移。后续改为候选机动评分：
-//   枚举 左/右横移、加速、减速、加速+横移、减速+横移，
-//   按与全部来袭鱼雷的最近接近余量 + 地形/边界/脱离交战代价选最优，
-//   并锁定 0.4~0.8 秒，避免每帧来回切换加速/减速。
+/**
+ * 规避行为抽象（原 Dodge，改称 Evasion）：不同舰船可使用不同规避逻辑
+ * （未来如驱逐舰为战列舰主动挡雷）。
+ * 当前所有舰船缺省使用 DefaultEvasionBehavior。
+ *
+ * 现在的规避是「自适应横移」：对全部“未来会命中”的来袭鱼雷，
+ * 以命中椭圆半径 + 安全余量算出脱离所需的最小横向位移，
+ * 优先选偏移更小、且两侧都不够时最坏余量更大的一侧，
+ * 再按最早命中时刻反推规避速度，保证在命中前脱离。
+ */
 import type { Ship, ThreatItem } from "./ship";
 import { clamp, P } from "../game/utils";
 import { getWeaponSpec } from "../weapons";
 import { getGameInstance } from "../game/Game";
 
 export interface EvasionPlan {
-  // 规避方向：1-向上，-1-向下
+  // 规避方向：1-向下，-1-向上
   side: 1 | -1;
   // 规避阶段的速度系数（相对基础航速），用于限制机动幅度
   speedFactor: number;
   // 规避阶段持续时间（秒），到期进入回正
   duration: number;
-  // 最大横向偏移距离（像素），保持机动幅度小，避免过猛反而撞上鱼雷
+  // 横向规避位移（像素）：自适应，需足以脱离命中椭圆
   amplitude: number;
 }
 
@@ -34,64 +36,151 @@ export interface EvasionBehavior {
   decide(ship: Ship, threat: ThreatItem): EvasionPlan | null;
 }
 
+// 评估未来威胁的时间窗（秒）：只看这段时间内会命中自己的鱼雷
+const THREAT_WINDOW = 2.2;
+// 脱离命中椭圆之外再留的安全余量（像素）
+const CLEAR_MARGIN = 24;
+// 基础横移幅度（像素）：即使威胁不大也至少做这么点机动
+const BASE_AMPLITUDE = 42;
+// 横移幅度上限（像素）：避免为了躲雷做过长的横穿
+const MAX_AMPLITUDE = 168;
+// 搜索脱离幅度时的步长（像素）
+const AMPLITUDE_STEP = 12;
+// 规避最短持续时间（秒）
+const EVASION_DURATION = 0.9;
+// 规避时的速度系数范围
+const MIN_SPEED_FACTOR = 0.65;
+const MAX_SPEED_FACTOR = 1.6;
+
 export const DEFAULT_EVASION_PLAN: EvasionPlan = {
   side: 1,
-  // 规避时仅略快于正常巡航（正常 0.5，规避 0.65），避免机动过猛
-  speedFactor: 0.65,
-  duration: 0.85,
-  // 最大横向偏移，保持机动幅度小
-  amplitude: 42,
+  speedFactor: MIN_SPEED_FACTOR,
+  duration: EVASION_DURATION,
+  amplitude: BASE_AMPLITUDE,
 };
 
-// 查点 q 到静止点 (px, py) 的最近接近时刻与距离（只评估未来 2.2 秒内）
-function closestApproachToPoint(q: { x: number; y: number; vx: number; vy: number }, px: number, py: number): { dist: number } {
-  const rx = q.x - px,
-    ry = q.y - py;
+// 查点 q 到静止点 (px, py) 的最近接近距离（只评估未来 THREAT_WINDOW 秒内）
+function closestApproachToPoint(q: { x: number; y: number; vx: number; vy: number }, px: number, py: number): number {
+  const rx = q.x - px;
+  const ry = q.y - py;
   const vv = q.vx * q.vx + q.vy * q.vy;
-  if (vv < 1e-6) return { dist: Math.hypot(rx, ry) };
+  if (vv < 1e-6) return Math.hypot(rx, ry);
   let t = -(rx * q.vx + ry * q.vy) / vv;
   if (t < 0) t = 0;
-  if (t > 2.2) t = 2.2;
-  const cx = q.x + q.vx * t,
-    cy = q.y + q.vy * t;
-  return { dist: Math.hypot(cx - px, cy - py) };
+  if (t > THREAT_WINDOW) t = THREAT_WINDOW;
+  const cx = q.x + q.vx * t;
+  const cy = q.y + q.vy * t;
+  return Math.hypot(cx - px, cy - py);
+}
+
+// 收集所有“会在时间窗内命中本舰”的鱼雷（按命中椭圆判定）
+function collectThreats(ship: Ship): ThreatItem[] {
+  const game = getGameInstance();
+  if (!game) return [];
+  const halfW = ship.wid / 2;
+  const threats: ThreatItem[] = [];
+  for (const p of game.projectiles) {
+    if (p.owner === ship || p.type !== "torp" || p.dead) continue;
+    const rx = ship.x - p.x;
+    const ry = ship.y - p.y;
+    const rvx = ship.vx - p.vx;
+    const rvy = ship.vy - p.vy;
+    const vv = rvx * rvx + rvy * rvy;
+    if (vv < 100) continue;
+    const t = -(rx * rvx + ry * rvy) / vv;
+    if (t < 0 || t > THREAT_WINDOW) continue;
+    const miss = Math.hypot(rx + rvx * t, ry + rvy * t);
+    // 只有真正落进命中椭圆的鱼雷才需要规避
+    if (miss <= getWeaponSpec(p.type).radius + halfW) threats.push({ t, p, miss });
+  }
+  return threats;
+}
+
+// 候选位置的最坏情况余量：对全部威胁鱼雷取“离命中椭圆最近的距离”
+function minClearance(ship: Ship, threats: ThreatItem[], candY: number): number {
+  const halfW = ship.wid / 2;
+  let minClear = Infinity;
+  for (const th of threats) {
+    const dist = closestApproachToPoint(th.p, ship.x, candY);
+    const clear = dist - getWeaponSpec(th.p.type).radius - halfW;
+    if (clear < minClear) minClear = clear;
+  }
+  return minClear;
+}
+
+// 朝某一侧逐渐加大横移，返回第一个能脱离全部威胁的幅度；到边界仍不行返回 null
+function firstClearingOffset(ship: Ship, threats: ThreatItem[], side: 1 | -1): number | null {
+  for (let offset = BASE_AMPLITUDE; offset <= MAX_AMPLITUDE; offset += AMPLITUDE_STEP) {
+    const candY = clamp(ship.y + side * offset, P.yMin, P.yMax);
+    if (minClearance(ship, threats, candY) >= CLEAR_MARGIN) return offset;
+    // 已被 Y 边界夹住，再加大幅度也到不了更远，这一侧放弃
+    if (side > 0 ? candY >= P.yMax : candY <= P.yMin) return null;
+  }
+  return null;
+}
+
+// 选择规避方案：优先能脱离且幅度更小的一侧；两侧都脱离不了时取最坏余量最大的一侧
+function chooseManeuver(ship: Ship, threats: ThreatItem[], hitY: number): { side: 1 | -1; amplitude: number } {
+  let bestSide: 1 | -1 = hitY > ship.y ? -1 : 1;
+  let bestOffset = Infinity;
+  let roomOfBest = -Infinity;
+  let found = false;
+
+  for (const side of [-1, 1] as const) {
+    const offset = firstClearingOffset(ship, threats, side);
+    if (offset === null) continue;
+    // 两侧都能脱离时：幅度更小的优先；幅度相同则选离 Y 边界更远、机动空间更大的一侧
+    const room = side > 0 ? P.yMax - ship.y : ship.y - P.yMin;
+    if (offset < bestOffset - 1e-6 || (Math.abs(offset - bestOffset) <= 1e-6 && room > roomOfBest)) {
+      bestSide = side;
+      bestOffset = offset;
+      roomOfBest = room;
+      found = true;
+    }
+  }
+  if (found) return { side: bestSide, amplitude: bestOffset };
+
+  // 两侧都无法完全脱离：取最大幅度下最坏余量更大的一侧（两害相权取其轻）
+  let bestClear = -Infinity;
+  bestSide = hitY > ship.y ? -1 : 1;
+  for (const side of [-1, 1] as const) {
+    const candY = clamp(ship.y + side * MAX_AMPLITUDE, P.yMin, P.yMax);
+    const clear = minClearance(ship, threats, candY);
+    if (clear > bestClear) {
+      bestClear = clear;
+      bestSide = side;
+    }
+  }
+  return { side: bestSide, amplitude: MAX_AMPLITUDE };
 }
 
 export class DefaultEvasionBehavior implements EvasionBehavior {
   private readonly plan: EvasionPlan = DEFAULT_EVASION_PLAN;
 
   decide(ship: Ship, threat: ThreatItem): EvasionPlan | null {
-    const p = threat.p;
-    // 预测的弹道击中 Y 坐标，用于平局时的兜底方向（远离冲击点）
-    const hitY = p.y + p.vy * threat.t;
+    const threats = collectThreats(ship);
+    // 预测的弹道命中 Y，用于没有可脱离威胁时的兜底方向和平局判定
+    const hitY = threat.p.y + threat.p.vy * threat.t;
 
-    const game = getGameInstance();
-    const torpedoes = game ? game.projectiles.filter((q) => q.type === "torp" && q.owner !== ship && !q.dead) : [];
-
-    const amp = this.plan.amplitude;
-    const halfW = ship.wid / 2;
-    const yMax = P.yMax;
-    const yMin = P.yMin;
-
-    let bestSide: 1 | -1 = hitY > ship.y ? -1 : 1;
-    let bestScore = -Infinity;
-
-    // 评估向上 / 向下两个候选躲避位置，取对全部来袭鱼雷最坏情况也最安全的一侧
-    for (const side of [-1, 1] as const) {
-      const candY = clamp(ship.y + side * amp, yMin, yMax);
-      let minClear = Infinity;
-      for (const q of torpedoes) {
-        const { dist } = closestApproachToPoint(q, ship.x, candY);
-        const clear = dist - getWeaponSpec(q.type).dangerRadius - halfW;
-        if (clear < minClear) minClear = clear;
-      }
-      const score = torpedoes.length > 0 ? minClear : Math.abs(candY - hitY);
-      if (score > bestScore) {
-        bestScore = score;
-        bestSide = side;
-      }
+    if (threats.length === 0) {
+      return { ...this.plan, side: hitY > ship.y ? -1 : 1 };
     }
 
-    return { ...this.plan, side: bestSide };
+    const maneuver = chooseManeuver(ship, threats, hitY);
+
+    // 最早来袭时刻决定横移速度：必须在它命中前走完 amplitude
+    let earliest = Infinity;
+    for (const th of threats) {
+      if (th.t < earliest) earliest = th.t;
+    }
+    const travelTime = Math.max(0.25, earliest);
+    const speedFactor = clamp(maneuver.amplitude / (P.moveSpeed * travelTime), MIN_SPEED_FACTOR, MAX_SPEED_FACTOR);
+
+    return {
+      side: maneuver.side,
+      amplitude: maneuver.amplitude,
+      speedFactor,
+      duration: Math.max(EVASION_DURATION, travelTime),
+    };
   }
 }

@@ -55,16 +55,21 @@
 
 **默认规避行为 `DefaultEvasionBehavior`**
 
-- 横向候选只有向上 / 向下两个位置：`ship.y ± amplitude`（默认 42px）。
-- 对全部存活敌方鱼雷做预测，计算每个候选点对所有鱼雷的**最坏情况余量**（最近接近距离 − 危险半径 − 半船宽），选更安全的一侧。
+- 先收集**未来 2.2 秒内会命中本舰**的鱼雷（按命中椭圆 `鱼雷碰撞半径 + 半船宽` 判定），已飞过或不会命中的不参与评估。
+- 横向只有向上 / 向下两侧；对每一侧从基础幅度 42px 起、按 12px 步进逐级加大，找到**第一个能脱离全部威胁**的偏移：候选点对所有鱼雷的最坏余量（最近接近距离 − 鱼雷碰撞半径 − 半船宽）≥ 24px。
+- 选偏移更小的一侧；两侧偏移相同则选离 Y 边界更远、机动空间更大的一侧；两侧都脱离不了时取最大幅度（168px）下最坏余量更大的一侧。
+- 速度按“最早来袭时刻”反推：`speedFactor = clamp(amplitude / (P.moveSpeed × travelTime), 0.65, 1.6)`，保证在命中前横移到位。
+- 输出方案：`amplitude` 自适应（42 ~ 168px）、`speedFactor` 0.65 ~ 1.6、`duration ≥ 0.9s`（且不短于最早来袭时间）。
 - 没有鱼雷数据时退化为“远离预测命中点”。
-- 输出方案：`speedFactor = 0.65`、`duration = 0.85s`、`amplitude = 42px`。
 
 **`dodge` 阶段（直接改坐标，不走 `driveShip`）**
 
-- 舰体以固定转向速率转向垂直于基准航向的方向（`baseAngle ± 90°`）。
-- Y 向往 `baseY ± amplitude` 移动，并夹在 `P.yMin / P.yMax` 内。
-- 沿 `dir` 以 `moveSpeed × 0.65` 前进；左右越界时反弹并更新 `dir`。
+- 舰体向安全侧压一个明显的舵角（`EVASION_TURN` ≈ 68°），边转向边全速脱离；船头始终对准真实航迹，不再横着平移，观感是**一次急转脱离**而不是侧滑。
+- 世界航向由前进方向与规避侧合成：`atan2(side × sin(turn), dir × cos(turn))`；横移到位后转回水平航向（`0 / π`），保持 Y 不再漂移。
+- 沿船头方向前进，横向分量只有 `sin(turn)`；总速度按 `1 / sin(turn)` 补偿，确保实际横移量达到 `plan.amplitude`。`speedFactor` 自适应 0.65 ~ 1.6。
+- 左右越界时反弹并更新 `dir / baseAngle`；Y 向夹在 `P.yMin / P.yMax` 内；`amplitude` 由规避行为自适应给出。
+- `vx / vy` 由本帧实际位移反推，保证威胁预判读到真实航速。
+- **规避期间暂停开火**：进入 `dodge` 时立刻中止未打完的炮塔齐射，炮管保持原位；机动结束进入 `recover` 后恢复交战。
 - 持续时间到且已无威胁 → 进入 `recover`；仍有威胁则继续规避。
 
 **`recover` 阶段**
@@ -73,8 +78,8 @@
 - 每帧重新检测威胁，一旦又有鱼雷来袭立刻重新规避。
 - 航向误差 < 0.02 rad、位置误差 < 0.5px、且本次规避已持续超过 0.35s → 回到 `normal` 并吸附到位。
 
-> 规避 / 回正仍沿用旧的“沿 X 轴前进 + Y 横移”模型，不经过统一运动层。
-> 代码中有 `TODO(鱼雷规避)`：未来改为候选机动评分（加速 / 减速 / 左右横移组合）。
+> 规避 / 回正仍不经过统一运动层；规避阶段用“明显舵角 + 全速脱离”的自适应方案，幅度与速度由 `EvasionBehavior.decide()` 按来袭鱼雷计算。
+> 规避只做单侧脱离，暂不包含加速 / 减速与横移的组合评分。
 
 ## 4. 行动模式（ActionMode）
 
@@ -207,34 +212,35 @@ driveShip(ship, heading, speedFactor, dt, {
 
 - 按当前船头方向前进，写入位置后统一 clamp。
 - `vx / vy` 由**实际位移 / dt** 反推，保证预判瞄准、鱼雷威胁计算读到的是真实速度。
-- `|vx| > 1` 时更新 `dir`（用于 `search` 航向与旧规避逻辑）。
+- `|vx| > 1` 时更新 `dir`（用于 `search` 航向与规避阶段的 `moveForward`）。
 
 ## 6. 参数速查
 
-| 参数                            | 当前值               | 位置                 | 作用                               |
-| ------------------------------- | -------------------- | -------------------- | ---------------------------------- |
-| `P.moveSpeed`                   | 120 px/s             | `game/utils.ts`      | 基础航速                           |
-| `P.normalFactor`                | 0.5                  | `game/utils.ts`      | 默认巡航系数，倍率 1 = 60 px/s     |
-| `P.turnRate`                    | 85°/s                | `game/utils.ts`      | 舰体转向速率                       |
-| `P.yMin / yMax`                 | 地图高度 6% 余量     | `game/utils.ts`      | 上下边界                           |
-| `speedMin / speedMax`           | 0.7 / 1.6            | `ship/index.ts` 默认 | 速度倍率上下限                     |
-| `accelRate`                     | 1.2                  | `ship/index.ts` 默认 | 加减速平滑速度                     |
-| `BOUNDARY_LOOK_AHEAD`           | 240px                | `locomotion.ts`      | 边界前视距离                       |
-| `BOUNDARY_PARALLEL_MAX_TURN`    | 30°                  | `locomotion.ts`      | 允许浅转贴边的最大转角             |
-| `BOUNDARY_PARALLEL_HOLD`        | 2.5s                 | `locomotion.ts`      | 平行保持时间                       |
-| `BOUNDARY_PARALLEL_NEAR`        | 120px                | `locomotion.ts`      | “真的贴边”阈值，同时是索敌权重起点 |
-| `TURN_FATIGUE_RECOVER_EDGE`     | 0.4/s                | `locomotion.ts`      | 贴边时额外恢复疲劳                 |
-| `TURN_FATIGUE_RECOVER_BOUNDARY` | 0.5/s                | `locomotion.ts`      | 边界大转向减速时额外恢复疲劳       |
-| `TURN_DEAD_ZONE_MAX`            | 30°                  | `locomotion.ts`      | 满疲劳时的最大忽略角               |
-| `STUCK_WINDOW`                  | 1.5s                 | `locomotion.ts`      | 卡位判定窗口                       |
-| 环绕半径 `R`                    | `max(280, 4 × 舰长)` | `SmallShipAction.ts` | 小型舰环绕半径                     |
-| 交战距离                        | 主炮射程 × 0.9       | `SmallShipAction.ts` | 进入 `engage`                      |
-| 规避幅度 / 时长 / 速度          | 42px / 0.85s / 0.65  | `evasion.ts`         | 默认鱼雷规避                       |
+| 参数                            | 当前值                             | 位置                 | 作用                               |
+| ------------------------------- | ---------------------------------- | -------------------- | ---------------------------------- |
+| `P.moveSpeed`                   | 120 px/s                           | `game/utils.ts`      | 基础航速                           |
+| `P.normalFactor`                | 0.5                                | `game/utils.ts`      | 默认巡航系数，倍率 1 = 60 px/s     |
+| `P.turnRate`                    | 85°/s                              | `game/utils.ts`      | 舰体转向速率                       |
+| `P.yMin / yMax`                 | 地图高度 6% 余量                   | `game/utils.ts`      | 上下边界                           |
+| `speedMin / speedMax`           | 0.7 / 1.6                          | `ship/index.ts` 默认 | 速度倍率上下限                     |
+| `accelRate`                     | 1.2                                | `ship/index.ts` 默认 | 加减速平滑速度                     |
+| `BOUNDARY_LOOK_AHEAD`           | 240px                              | `locomotion.ts`      | 边界前视距离                       |
+| `BOUNDARY_PARALLEL_MAX_TURN`    | 30°                                | `locomotion.ts`      | 允许浅转贴边的最大转角             |
+| `BOUNDARY_PARALLEL_HOLD`        | 2.5s                               | `locomotion.ts`      | 平行保持时间                       |
+| `BOUNDARY_PARALLEL_NEAR`        | 120px                              | `locomotion.ts`      | “真的贴边”阈值，同时是索敌权重起点 |
+| `TURN_FATIGUE_RECOVER_EDGE`     | 0.4/s                              | `locomotion.ts`      | 贴边时额外恢复疲劳                 |
+| `TURN_FATIGUE_RECOVER_BOUNDARY` | 0.5/s                              | `locomotion.ts`      | 边界大转向减速时额外恢复疲劳       |
+| `TURN_DEAD_ZONE_MAX`            | 30°                                | `locomotion.ts`      | 满疲劳时的最大忽略角               |
+| `STUCK_WINDOW`                  | 1.5s                               | `locomotion.ts`      | 卡位判定窗口                       |
+| 环绕半径 `R`                    | `max(280, 4 × 舰长)`               | `SmallShipAction.ts` | 小型舰环绕半径                     |
+| 交战距离                        | 主炮射程 × 0.9                     | `SmallShipAction.ts` | 进入 `engage`                      |
+| 规避幅度 / 时长 / 速度          | 自适应 42~168px / ≥0.9s / 0.65~1.6 | `evasion.ts`         | 自适应鱼雷规避                     |
+| `EVASION_TURN`                  | 68°                                | `ShipImpl.ts`        | 规避时相对前进轴压的舵角           |
 
 ## 7. 调试与已知 TODO
 
 - HUD 的 `state` 仍显示 `normal / dodge / recover`，与内部状态名一致。
 - `hud.ts` 中有调试 HUD 的 TODO：未来显示行动模式阶段、环绕圈、期望航向、速度倍率、转向疲劳、卡位计时、鱼雷齐射队列，以及贴边状态（平行航向 / 到边界距离 / 索敌权重）。
-- `evasion.ts`：规避仍是固定幅度横移，后续改为候选机动评分并锁定 0.4~0.8s。
+- `evasion.ts`：规避为自适应横移（按来袭鱼雷算出脱离所需幅度与速度），暂未加入加速 / 减速与横移的组合评分。
 - `SmallShipAction.ts`：当前鱼雷艇 / 护卫舰共用的环绕炮战行动模式。
 - `ship/index.ts`：主炮尚未限制 60°~120° 横向射界，`TODO(横向射界)`。

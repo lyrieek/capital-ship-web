@@ -1,16 +1,23 @@
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { GameMap } from "../map";
 import { getZoneSpawn, MAP_TEAM_COLORS } from "../map/types";
 import { getTerrainSpec } from "../terrain/spec";
 import type { TerrainPlacement } from "../terrain/layout";
 import { WORLD_H, WORLD_W } from "../game/world";
+import type { ShipEntry } from "../ship/ship-manager";
+import { createFleetShips, FLEET_SIZE, type FleetSelection, type FleetShips, type FleetTeam } from "../game/fleet";
+import FleetPicker from "./FleetPicker";
 
 const GRID_STEPS_X = 8;
 const GRID_STEPS_Y = 5;
 
 export interface MapSelectProps {
   maps: readonly GameMap[];
-  onSelect: (map: GameMap) => void;
+  ships: readonly ShipEntry[];
+  selection: FleetSelection;
+  onToggleShip: (team: FleetTeam, id: string) => void;
+  onSelect: (map: GameMap, fleets: FleetShips) => void;
 }
 
 function MapTerrain({ terrain }: { terrain: readonly TerrainPlacement[] }) {
@@ -101,8 +108,25 @@ function MapPreview({ map }: { map: GameMap }) {
   );
 }
 
-export default function MapSelect({ maps, onSelect }: MapSelectProps) {
+export default function MapSelect({ maps, ships, selection, onToggleShip, onSelect }: MapSelectProps) {
   const { t } = useTranslation();
+
+  const ready = selection.red.length === FLEET_SIZE && selection.blue.length === FLEET_SIZE;
+  const shortage = ships.length < FLEET_SIZE * 2;
+
+  const startBattle = useCallback(
+    (map: GameMap) => {
+      if (!ready) return;
+      onSelect(map, createFleetShips(ships, selection));
+    },
+    [onSelect, ready, selection, ships],
+  );
+
+  const statusText = shortage
+    ? t("mapSelect.fleetShortage", { count: ships.length, need: FLEET_SIZE * 2 })
+    : ready
+      ? t("mapSelect.fleetReady", { count: FLEET_SIZE * 2 })
+      : t("mapSelect.fleetIncomplete", { red: selection.red.length, blue: selection.blue.length, size: FLEET_SIZE });
 
   return (
     <section className="map-select">
@@ -110,6 +134,30 @@ export default function MapSelect({ maps, onSelect }: MapSelectProps) {
         <h2>{t("mapSelect.title")}</h2>
         <p>{t("mapSelect.subtitle")}</p>
       </header>
+
+      <section className="fleet-select" aria-label={t("mapSelect.fleetTitle")}>
+        <header className="fleet-select-header">
+          <h3>{t("mapSelect.fleetTitle")}</h3>
+          <p>{t("mapSelect.fleetSubtitle")}</p>
+        </header>
+        <div className="fleet-select-row">
+          <FleetPicker team="red" ships={ships} selected={selection.red} otherSelected={selection.blue} onToggle={(id) => onToggleShip("red", id)} />
+          <span className="fleet-vs" aria-hidden="true">
+            VS
+          </span>
+          <FleetPicker
+            team="blue"
+            ships={ships}
+            selected={selection.blue}
+            otherSelected={selection.red}
+            onToggle={(id) => onToggleShip("blue", id)}
+          />
+        </div>
+        <p className={ready ? "fleet-status is-ready" : "fleet-status is-warning"} role="status">
+          {statusText}
+        </p>
+      </section>
+
       <div className="map-select-grid">
         {maps.map((map) => {
           const islandCount = map.terrain.filter((placement) => placement.kind === "island").length;
@@ -127,7 +175,13 @@ export default function MapSelect({ maps, onSelect }: MapSelectProps) {
                   <span>{t("mapSelect.reefCount", { count: reefCount })}</span>
                   <span>{t("mapSelect.zoneCount", { count: map.zones.length })}</span>
                 </div>
-                <button type="button" className="map-card-start" onClick={() => onSelect(map)}>
+                <button
+                  type="button"
+                  className="map-card-start"
+                  onClick={() => startBattle(map)}
+                  disabled={!ready}
+                  title={ready ? undefined : statusText}
+                >
                   {t("mapSelect.start")}
                 </button>
               </div>
