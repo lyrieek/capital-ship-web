@@ -14,6 +14,7 @@ import { bindPointerInput, ShipSelection } from "./selection";
 import { issueSelectionSail } from "./movement";
 import type { RestrictAreaImpl } from "./RestrictAreaImpl";
 import { applyZoomToCamera, createBabylonScene, getViewHeight, setCameraBaseSize, updateCameraEffect } from "../babylon";
+import { emitWake } from "./fx";
 import { createParticleFx, type ParticleFx } from "./particle-fx";
 import { createShipHudLayer, type ShipHudLayer } from "../ship/hud";
 import { createShipVisual, disposeNavLine, disposeShipTurrets, type ShipVisual, RG_SHIP, syncShipVisual } from "../ship/render-visual";
@@ -23,6 +24,15 @@ import { createShipVisual, disposeNavLine, disposeShipTurrets, type ShipVisual, 
 // 世界 Z 只表示真实 3D 高度（地形）和必要的共面深度偏移，不再当图层序号。
 const RG_WATER = 0;
 const RG_FX = 2;
+// 尾流发射速度门槛（px/s）：低于此速度不发尾流，避免原地转圈刷粒子
+const WAKE_MIN_SPEED = 6;
+// 尾流从船尾外侧的偏移距离，避免与船体贴图重叠
+const WAKE_TAIL_OFFSET = 14;
+// 尾流按航迹距离发射（世界单位）：船每走这么远才发一次，而不是每帧都发。
+// 帧率无关，高刷屏不会成倍增加粒子；密度仍足够让泡沫带连续。
+const WAKE_EMIT_SPACING = 5;
+// 每艘船上一次发射尾迹时的位置，用于按距离节流
+const wakeTrailPoints = new WeakMap<Ship, { x: number; y: number }>();
 
 // 场景资源
 let engine: Engine | null = null;
@@ -232,6 +242,25 @@ export function renderGame(game: GameState, dt = 1 / 60) {
   if (oceanSurface && oceanSurface.kind !== kind) oceanSurface.setKind(kind);
   oceanSurface?.refresh(game.time, H / 2 - getCameraFocus().y);
   syncShips(game);
+  // 船尾迹：存活且航速超过门槛的船，每走 WAKE_EMIT_SPACING 世界单位才在船尾发一次粒子。
+  // 沉船 / 停船后清掉记录，屏上残留粒子按各自生命自然淡出，稳定消失、无残留。
+  for (const ship of game.ships) {
+    if (!ship.alive) {
+      wakeTrailPoints.delete(ship);
+      continue;
+    }
+    const speed = Math.hypot(ship.vx, ship.vy);
+    if (speed < WAKE_MIN_SPEED) {
+      wakeTrailPoints.delete(ship);
+      continue;
+    }
+    const last = wakeTrailPoints.get(ship);
+    if (last && Math.hypot(ship.x - last.x, ship.y - last.y) < WAKE_EMIT_SPACING) continue;
+    wakeTrailPoints.set(ship, { x: ship.x, y: ship.y });
+    const tailX = ship.x - Math.cos(ship.angle) * (ship.len / 2 + WAKE_TAIL_OFFSET);
+    const tailY = ship.y - Math.sin(ship.angle) * (ship.len / 2 + WAKE_TAIL_OFFSET);
+    emitWake(tailX, tailY, ship.angle, speed);
+  }
   weaponRender?.sync(game.projectiles);
   particleFx?.sync(dt);
   scene.render();
