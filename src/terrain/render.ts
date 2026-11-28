@@ -1,12 +1,14 @@
 // 地物渲染：把 TerrainItem 列表同步成 Babylon 网格。
 // 地物是静态的，正常只在初始化时 sync 一次；保留 sync 是为了以后支持「战斗中被击毁 / 动态生成」。
-import type { Mesh, Scene, StandardMaterial } from "@babylonjs/core";
+// 同一类型的地物被静态合批为一个 Mesh（顶点已烘入世界变换），把 N 个地物的 N 次绘制降为每类 1 次。
+import { Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
 import { worldToScene } from "../babylon";
-import { createIslandMaterial, createIslandMesh } from "./island";
+import { createIslandMaterial, createIslandMesh, islandSurfaceZ } from "./island";
 import { createReefMaterial, createReefMesh } from "./reef";
 import { createShipyardMaterial, createShipyardMesh } from "./shipyard";
+import { createPalmForest, placePalms, type PalmInstance } from "./palm";
 import { getTerrainSpec, type TerrainSpec } from "./spec";
-import type { TerrainItem, TerrainKind } from "./types";
+import { TERRAIN_KINDS, type TerrainItem, type TerrainKind } from "./types";
 
 /** 地物 Z 值：与海面同高，靠渲染分组压在海面之上 */
 export const TERRAIN_Z = 0;
@@ -51,10 +53,12 @@ export function createTerrainRender(options: TerrainRenderOptions): TerrainRende
   const z = options.z ?? TERRAIN_Z;
 
   // 碰撞不在这里：地物只负责画，舰船 vs 地形的判定在 game/collision.ts。
-  // 每个地物一个 Mesh：key 为 item.id，sync 时按 id 增删
-  const meshes = new Map<string, Mesh>();
   // 材质按类型缓存：同类型地物共用一份，几何形状差异靠 seed 体现在网格上
   const materials = new Map<TerrainKind, StandardMaterial>();
+  // 静态合批后的网格：每类地物一个 Mesh
+  const batches = new Map<TerrainKind, Mesh>();
+  // 棕榈林：所有大岛的棕榈共享同一份 thin instance 网格（二次渲染）
+  let palmForest: Mesh | null = null;
 
   function getMaterial(kind: TerrainKind): StandardMaterial {
     const existing = materials.get(kind);
@@ -87,34 +91,82 @@ export function createTerrainRender(options: TerrainRenderOptions): TerrainRende
     mesh.rotation.z = -(item.rotation ?? 0);
     mesh.scaling.set(scale, scale, scale);
     // 地物是静态的：冻结世界矩阵，省掉每帧的矩阵计算。
-    // 冻结后世界矩阵已算好，碰撞系统可以直接用，不用每帧重算。
-    // 以后要动态移动 / 击沉时，记得先 unfreezeWorldMatrix()
     mesh.freezeWorldMatrix();
   }
 
-  function sync(items: readonly TerrainItem[]): void {
-    const seen = new Set<string>();
+  function buildBatch(kind: TerrainKind, items: readonly TerrainItem[]): Mesh | null {
+    const meshes: Mesh[] = [];
     for (const item of items) {
-      seen.add(item.id);
-      let mesh = meshes.get(item.id);
-      if (!mesh) {
-        mesh = createMesh(item);
-        meshes.set(item.id, mesh);
-      }
+      if (item.kind !== kind) continue;
+      const mesh = createMesh(item);
       applyTransform(mesh, item);
-      mesh.setEnabled(true);
+      meshes.push(mesh);
     }
-    // 数据里已经没有了的地物：销毁网格；材质保留在缓存里复用
-    for (const [id, mesh] of meshes) {
-      if (seen.has(id)) continue;
-      mesh.dispose();
-      meshes.delete(id);
+    if (meshes.length === 0) return null;
+    // 合批：把同类地物的顶点烘入一个 Mesh，绘制次数从 N 降到 1；disposeSource=true 会释放源网格
+    const batch = Mesh.MergeMeshes(meshes, true, true);
+    if (!batch) throw new Error(`[terrain] 地物网格合并失败: ${kind}`);
+    batch.name = `terrainBatch_${kind}`;
+    batch.material = getMaterial(kind);
+    batch.renderingGroupId = renderingGroupId;
+    batch.isPickable = false;
+    // 合批后的网格同样静态：冻结世界矩阵（identity），省掉每帧矩阵计算
+    batch.freezeWorldMatrix();
+    return batch;
+  }
+
+  function buildPalmForest(items: readonly TerrainItem[]): void {
+    // 释放旧棕榈林及其材质
+    palmForest?.material?.dispose();
+    palmForest?.dispose();
+    palmForest = null;
+
+    // 收集所有大岛上的棕榈（岛屿局部坐标 -> 场景坐标，注意世界 Y 向下、场景 Y 向上，需翻转偏移）
+    // 树干底部贴岛面：按棕榈所在位置反查岛屿高度剖面，避免漂浮在海面或陷进岛里
+    const instances: PalmInstance[] = [];
+    for (const item of items) {
+      if (item.kind !== "island") continue;
+      const spec = getTerrainSpec(item.kind);
+      const locals = placePalms(item, spec.radius);
+      const base = worldToScene(item.x, item.y, 0);
+      const scale = item.scale ?? 1;
+      const seed = item.seed ?? 0;
+      for (const local of locals) {
+        // placePalms 返回的是世界偏移（已乘 scale）；岛网格也按 scale 放大，
+        // 所以先换回局部坐标求地表高度，再把高度乘回 scale。
+        const localZ = islandSurfaceZ(local.x / scale, local.y / scale, spec, seed);
+        instances.push({
+          x: base.x + local.x,
+          y: base.y - local.y,
+          z: base.z + localZ * scale,
+          scale: local.scale,
+          angle: local.angle,
+        });
+      }
     }
+
+    palmForest = createPalmForest("palmForest", scene, renderingGroupId, instances);
+  }
+
+  function sync(items: readonly TerrainItem[]): void {
+    // 释放旧合批
+    for (const batch of batches.values()) batch.dispose();
+    batches.clear();
+    // 每类地物重建一份合批（地物静态，sync 只在初始化时调用；如需动态增删，这里重建即可）
+    for (const kind of TERRAIN_KINDS) {
+      const batch = buildBatch(kind, items);
+      if (batch) batches.set(kind, batch);
+    }
+
+    buildPalmForest(items);
   }
 
   function dispose(): void {
-    for (const mesh of meshes.values()) mesh.dispose();
-    meshes.clear();
+    for (const batch of batches.values()) batch.dispose();
+    batches.clear();
+    palmForest?.material?.dispose();
+    palmForest?.dispose();
+    palmForest = null;
     for (const material of materials.values()) material.dispose();
     materials.clear();
   }

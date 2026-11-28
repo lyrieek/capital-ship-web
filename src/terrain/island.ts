@@ -36,6 +36,19 @@ function islandColor(profile: number): Color3 {
 }
 
 /**
+ * 岛屿局部坐标 (x, y) 处的地表高度（场景 z，向上为负）。
+ * 返回的是「未乘 item.scale」的局部值：网格整体会被缩放，调用方需要再乘 scale。
+ * 棕榈等岛面装饰用它贴地，避免漂浮在海面或陷进岛里。
+ */
+export function islandSurfaceZ(x: number, y: number, spec: TerrainSpec, seed: number): number {
+  const r = Math.hypot(x, y);
+  const edge = islandRadiusAt(Math.atan2(y, x), spec, seed);
+  if (edge <= 0) return 0;
+  const t = Math.min(1, r / edge);
+  return -(spec.height * heightProfile(t) + SINK * t);
+}
+
+/**
  * 建一座岛
  * @param name Mesh 名
  * @param scene Babylon 场景
